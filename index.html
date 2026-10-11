@@ -82,6 +82,8 @@ td:nth-child(2):last-child,.txt td:nth-child(2){white-space:normal}
 }
 .chk{flex-direction:row;align-items:center;gap:8px;font-size:.88rem}
 .chk input{width:auto}
+a{color:var(--accent);font-weight:600}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 </style>
 </head>
 <body>
@@ -91,11 +93,25 @@ td:nth-child(2):last-child,.txt td:nth-child(2){white-space:normal}
   <section id="tela-login" class="login" hidden>
     <h1 style="margin-bottom:16px">Finanças</h1>
     <form class="panel" id="flogin">
-      <label>Usuário<input name="usuario" autocomplete="username" required></label>
+      <label>E-mail<input name="usuario" type="email" autocomplete="username" required></label>
       <label>Senha<input name="senha" type="password" autocomplete="current-password" required></label>
       <label class="chk"><input type="checkbox" name="manter"> Manter conectado neste aparelho</label>
       <button class="btn" type="submit" id="blogin">Entrar</button>
     </form>
+    <p class="note">Não tem conta? <a href="#" id="ir-cad">Criar conta</a></p>
+  </section>
+
+  <section id="tela-cadastro" class="login" hidden>
+    <h1 style="margin-bottom:16px">Criar conta</h1>
+    <form class="panel" id="fcad">
+      <label>E-mail<input name="email" type="email" autocomplete="username" maxlength="120" required></label>
+      <label>Senha (mínimo 8 caracteres)<input name="senha" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Repita a senha<input name="senha2" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label class="chk"><input type="checkbox" name="aceite" required> Li e aceito os termos de uso e a política de privacidade</label>
+      <input name="site" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+      <button class="btn" type="submit" id="bcad">Criar conta</button>
+    </form>
+    <p class="note">Já tem conta? <a href="#" id="ir-login">Entrar</a></p>
   </section>
 
   <section id="app" hidden>
@@ -194,7 +210,13 @@ try { token = sessionStorage.getItem('fin_token') || localStorage.getItem('fin_t
 let D = { meta:0, despesas:[], receitas:[] };
 
 function aviso(t, tipo){ const b = $('aviso'); b.textContent = t || ''; b.hidden = !t; b.className = 'aviso ' + (tipo||''); }
-function mostrar(logado){ $('tela-login').hidden = logado; $('app').hidden = !logado; }
+let vistaAuth = /[?&]cadastro/.test(location.search) ? 'cadastro' : 'login';
+function mostrar(logado){
+  $('tela-login').hidden = logado || vistaAuth !== 'login';
+  $('tela-cadastro').hidden = logado || vistaAuth !== 'cadastro';
+  $('app').hidden = !logado;
+}
+function irPara(v){ vistaAuth = v; aviso(''); mostrar(false); }
 function sair(m){
   token = null; try { sessionStorage.removeItem('fin_token'); localStorage.removeItem('fin_token'); } catch(e) {}
   D = { meta:0, despesas:[], receitas:[] }; R = []; setVista(false); mostrar(false); aviso(m || '', 'info');
@@ -208,7 +230,7 @@ async function api(rota, corpo){
       body: JSON.stringify(corpo) });
   } catch(e) { throw new Error('Não foi possível conectar ao servidor.'); }
   let d = {}; try { d = await r.json(); } catch(e) {}
-  if (r.status === 401 && rota !== 'fin-login') { sair('Sua sessão expirou. Entre de novo.'); throw new Error(''); }
+  if (r.status === 401 && rota === 'fin-api') { sair('Sua sessão expirou. Entre de novo.'); throw new Error(''); }
   if (!r.ok || d.ok === false) throw new Error(d.erro || ('Erro ' + r.status));
   return d;
 }
@@ -217,16 +239,40 @@ async function seguro(fn){
   try { await fn(); } catch(e) { if (e.message) aviso(e.message); }
 }
 
+async function derivar(email, senha){
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey('raw', enc.encode(senha), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt: enc.encode('financas-web:' + email), iterations: 310000 }, base, 256);
+  return Array.from(new Uint8Array(bits)).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
 $('flogin').onsubmit = e => { e.preventDefault();
   const f = new FormData($('flogin')); const b = $('blogin');
   b.disabled = true; b.textContent = 'Entrando...';
   seguro(async () => {
-    const d = await api('fin-login', { username: f.get('usuario').trim(), password: f.get('senha') });
+    const email = f.get('usuario').trim().toLowerCase();
+    const d = await api('fin-login', { email, pw: await derivar(email, f.get('senha')) });
     token = d.token; try { (f.get('manter') ? localStorage : sessionStorage).setItem('fin_token', token); } catch(e) {}
     $('flogin').reset(); mostrar(true); await carregar();
   }).finally(() => { b.disabled = false; b.textContent = 'Entrar'; });
 };
 $('sair').onclick = () => sair();
+$('ir-cad').onclick = e => { e.preventDefault(); irPara('cadastro'); };
+$('ir-login').onclick = e => { e.preventDefault(); irPara('login'); };
+
+$('fcad').onsubmit = e => { e.preventDefault();
+  const f = new FormData($('fcad')); const b = $('bcad');
+  const email = f.get('email').trim().toLowerCase(), s1 = f.get('senha'), s2 = f.get('senha2');
+  if (s1 !== s2) { aviso('As senhas não são iguais.'); return; }
+  if (s1.length < 8) { aviso('Use uma senha com pelo menos 8 caracteres.'); return; }
+  b.disabled = true; b.textContent = 'Criando conta...';
+  seguro(async () => {
+    const pw = await derivar(email, s1);
+    const d = await api('fin-cadastro', { email, pw, aceite: f.get('aceite') === 'on', site: f.get('site') || '' });
+    token = d.token; try { sessionStorage.setItem('fin_token', token); } catch(e) {}
+    $('fcad').reset(); mostrar(true); await carregar();
+  }).finally(() => { b.disabled = false; b.textContent = 'Criar conta'; });
+};
 
 async function carregar(){
   const d = await api('fin-api', { acao:'listar', mes: $('mes').value });
