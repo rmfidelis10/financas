@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Finanças</title>
+<style>
+:root{--bg:#EDF3F2;--panel:#fff;--ink:#15302d;--mute:#5d7471;--line:#d3dedc;--accent:#0f766e;--warn:#b86e00;--bad:#b3261e;--track:#d9e5e3}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1b1a;--panel:#172827;--ink:#e3efed;--mute:#93aaa7;--line:#2a403e;--accent:#3cc4b5;--warn:#e3a53a;--bad:#ff8a80;--track:#243a38}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;line-height:1.5;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+main{max-width:880px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.4rem;margin:0;font-weight:800}
+h2{font-size:1.05rem;margin:0 0 12px;font-weight:800}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:20px}
+.ctrl{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+label{display:flex;flex-direction:column;font-size:.8rem;color:var(--mute);gap:4px;font-weight:600}
+input,select,button{font:inherit;color:var(--ink)}
+input,select{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-width:0;width:100%}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.gauge-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px}
+.big{font-size:2.3rem;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+.sub{color:var(--mute);font-size:.9rem}
+.track{position:relative;height:26px;background:var(--track);border-radius:13px;margin:14px 0 6px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--accent);border-radius:13px;transition:width .5s ease,background .3s}
+.tick{position:absolute;top:0;bottom:0;left:80%;width:2px;background:var(--panel);opacity:.8}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.stats div+div{border-left:1px solid var(--line);padding-left:14px}
+.stats b{display:block;font-size:1.15rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.full{grid-column:1/-1}
+.btn{border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer;background:var(--accent);color:#fff;width:100%}
+@media (prefers-color-scheme:dark){.btn{color:#06201d}}
+.btn.out{background:var(--ink);color:var(--bg)}
+.btn:disabled{opacity:.55;cursor:wait}
+.link{background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600}
+.cat{margin-bottom:12px}
+.cat .l{display:flex;justify-content:space-between;font-size:.92rem;gap:8px}
+.cat .b{height:8px;background:var(--track);border-radius:4px;margin-top:4px;overflow:hidden}
+.cat .b i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.empty{color:var(--mute);font-size:.92rem;margin:0}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:grid;grid-template-columns:48px 1fr auto 32px;gap:8px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:.92rem}
+.list li:first-child{border-top:0}
+.list small{color:var(--mute);display:block}
+.pos{color:var(--accent);font-weight:700}.neg{font-weight:700}
+.x{background:none;border:0;color:var(--mute);cursor:pointer;font-size:1.1rem;border-radius:6px;height:32px}
+.x:hover{color:var(--bad)}
+.aviso{border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:.92rem;border:1px solid var(--bad);color:var(--bad);background:var(--panel)}
+.aviso.info{border-color:var(--line);color:var(--mute)}
+.login{max-width:380px;margin:12vh auto 0}
+.login .panel{padding:24px}
+.login label{margin-bottom:12px}
+.note{color:var(--mute);font-size:.8rem;text-align:center;margin-top:8px}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}.big{font-size:1.9rem}.stats b{font-size:1rem}}
+@media (prefers-reduced-motion:reduce){.fill{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <div id="aviso" class="aviso" role="alert" hidden></div>
+
+  <section id="tela-login" class="login" hidden>
+    <h1 style="margin-bottom:16px">Finanças</h1>
+    <form class="panel" id="flogin">
+      <label>Usuário<input name="usuario" autocomplete="username" required></label>
+      <label>Senha<input name="senha" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit" id="blogin">Entrar</button>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <div class="top">
+      <h1>Minhas Finanças</h1>
+      <div class="ctrl">
+        <label>Mês<input type="month" id="mes"></label>
+        <label>Meta de gastos do mês (R$)<input id="meta" inputmode="decimal" placeholder="Ex.: 4.000,00"></label>
+        <button class="link" id="sair" type="button">Sair</button>
+      </div>
+    </div>
+
+    <section class="panel" aria-live="polite">
+      <div class="gauge-head">
+        <div><div class="sub" id="gl">Ainda pode gastar</div><div class="big" id="saldo">R$ 0,00</div></div>
+        <div class="sub" id="gp"></div>
+      </div>
+      <div class="track"><div class="fill" id="fill"></div><div class="tick" title="80% da meta"></div></div>
+      <div class="stats">
+        <div><span class="sub">Recebido</span><b id="trec">R$ 0,00</b></div>
+        <div><span class="sub">Gasto</span><b id="tdes">R$ 0,00</b></div>
+        <div><span class="sub">Sobra do mês</span><b id="tsob">R$ 0,00</b></div>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <form class="panel" id="fd">
+        <h2>Nova despesa</h2>
+        <div class="row"><label>Data<input type="date" name="data" required></label>
+        <label>Valor (R$)<input name="valor" inputmode="decimal" placeholder="0,00" required></label></div>
+        <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" placeholder="Ex.: Compras da semana" required></label>
+        <label class="full">Categoria<select name="cat" id="cats"></select></label></div>
+        <button class="btn out" type="submit">Adicionar despesa</button>
+      </form>
+      <form class="panel" id="fr">
+        <h2>Nova receita</h2>
+        <div class="row"><label>Data<input type="date" name="data" required></label>
+        <label>Valor (R$)<input name="valor" inputmode="decimal" placeholder="0,00" required></label></div>
+        <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" placeholder="Ex.: Salário" required></label></div>
+        <button class="btn" type="submit">Adicionar receita</button>
+      </form>
+    </div>
+
+    <section class="panel"><h2>Gastos por categoria</h2><div id="catlist"></div></section>
+    <section class="panel"><h2>Lançamentos do mês</h2><ul class="list" id="list"></ul></section>
+  </section>
+</main>
+<script>
+const API = 'https://rmfidelis-n8n.ddns.net/webhook';
+const CATS = ['Supermercado','Casa','Transporte','Saúde','Alimentação fora','Lazer','Outros'];
+const $ = id => document.getElementById(id);
+const brl = v => Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const pad = n => String(n).padStart(2,'0');
+const hoje = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+function parse(s){ s = String(s).trim().replace(/[^\d.,-]/g,'');
+  if (s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
+  else if (!/^-?\d+\.\d{1,2}$/.test(s)) s = s.replace(/\./g,'');
+  const n = parseFloat(s); return isNaN(n) ? NaN : n; }
+
+let token = null;
+try { token = sessionStorage.getItem('fin_token'); } catch(e) {}
+let D = { meta:0, despesas:[], receitas:[] };
+
+function aviso(t, tipo){ const b = $('aviso'); b.textContent = t || ''; b.hidden = !t; b.className = 'aviso ' + (tipo||''); }
+function mostrar(logado){ $('tela-login').hidden = logado; $('app').hidden = !logado; }
+function sair(m){
+  token = null; try { sessionStorage.removeItem('fin_token'); } catch(e) {}
+  D = { meta:0, despesas:[], receitas:[] }; mostrar(false); aviso(m || '', 'info');
+}
+
+async function api(rota, corpo){
+  let r;
+  try {
+    r = await fetch(API + '/' + rota, { method:'POST',
+      headers: Object.assign({'Content-Type':'application/json'}, token ? {Authorization:'Bearer ' + token} : {}),
+      body: JSON.stringify(corpo) });
+  } catch(e) { throw new Error('Não foi possível conectar ao servidor.'); }
+  let d = {}; try { d = await r.json(); } catch(e) {}
+  if (r.status === 401 && rota !== 'fin-login') { sair('Sua sessão expirou. Entre de novo.'); throw new Error(''); }
+  if (!r.ok || d.ok === false) throw new Error(d.erro || ('Erro ' + r.status));
+  return d;
+}
+async function seguro(fn){
+  aviso('');
+  try { await fn(); } catch(e) { if (e.message) aviso(e.message); }
+}
+
+$('flogin').onsubmit = e => { e.preventDefault();
+  const f = new FormData($('flogin')); const b = $('blogin');
+  b.disabled = true; b.textContent = 'Entrando...';
+  seguro(async () => {
+    const d = await api('fin-login', { username: f.get('usuario').trim(), password: f.get('senha') });
+    token = d.token; try { sessionStorage.setItem('fin_token', token); } catch(e) {}
+    $('flogin').reset(); mostrar(true); await carregar();
+  }).finally(() => { b.disabled = false; b.textContent = 'Entrar'; });
+};
+$('sair').onclick = () => sair();
+
+async function carregar(){
+  const d = await api('fin-api', { acao:'listar', mes: $('mes').value });
+  D = { meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[] };
+  mostraMeta(); render();
+}
+const soma = a => a.reduce((t,x) => t + (Number(x.valor)||0), 0);
+
+function render(){
+  const m = $('mes').value, des = D.despesas, rec = D.receitas;
+  const meta = D.meta, gasto = soma(des), recebido = soma(rec), saldo = meta - gasto;
+  const pct = meta > 0 ? gasto/meta : 0;
+  $('trec').textContent = brl(recebido); $('tdes').textContent = brl(gasto); $('tsob').textContent = brl(recebido-gasto);
+  if (meta <= 0){ $('gl').textContent = 'Defina a meta do mês'; $('saldo').textContent = brl(0); $('gp').textContent = ''; }
+  else if (saldo >= 0){ $('gl').textContent = 'Ainda pode gastar'; $('saldo').textContent = brl(saldo); $('gp').textContent = Math.round(pct*100) + '% da meta usada'; }
+  else { $('gl').textContent = 'Passou da meta em'; $('saldo').textContent = brl(-saldo); $('gp').textContent = Math.round(pct*100) + '% da meta usada'; }
+  const f = $('fill'); f.style.width = Math.min(pct,1)*100 + '%';
+  f.style.background = pct >= 1 ? 'var(--bad)' : pct >= .8 ? 'var(--warn)' : 'var(--accent)';
+  $('saldo').style.color = meta > 0 && saldo < 0 ? 'var(--bad)' : '';
+
+  const cl = $('catlist'); cl.innerHTML = '';
+  const por = CATS.map(c => ({ c, v: soma(des.filter(x => x.categoria === c)) })).filter(x => x.v > 0).sort((a,b) => b.v - a.v);
+  if (!por.length) cl.innerHTML = '<p class="empty">Nenhuma despesa neste mês ainda.</p>';
+  por.forEach(x => { const p = gasto ? x.v/gasto : 0; const d = document.createElement('div'); d.className = 'cat';
+    d.innerHTML = '<div class="l"><span></span><span></span></div><div class="b"><i></i></div>';
+    d.children[0].children[0].textContent = x.c;
+    d.children[0].children[1].textContent = brl(x.v) + ' · ' + Math.round(p*100) + '%';
+    d.querySelector('i').style.width = p*100 + '%'; cl.appendChild(d); });
+
+  const ul = $('list'); ul.innerHTML = '';
+  const todos = [...rec.map(x => Object.assign({}, x, {t:'receita'})), ...des.map(x => Object.assign({}, x, {t:'despesa'}))]
+    .sort((a,b) => String(b.data).localeCompare(String(a.data)));
+  if (!todos.length) ul.innerHTML = '<li class="empty">Nada lançado neste mês. Adicione uma receita ou despesa acima.</li>';
+  todos.forEach(x => { const li = document.createElement('li');
+    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span></span><button class="x" aria-label="Excluir lançamento">✕</button>';
+    const dt = String(x.data);
+    li.children[0].textContent = dt.slice(8,10) + '/' + dt.slice(5,7);
+    li.querySelector('.d').textContent = x.descricao;
+    li.querySelector('small').textContent = x.t === 'receita' ? 'Receita' : x.categoria;
+    const v = li.children[2]; v.textContent = (x.t === 'receita' ? '+ ' : '− ') + brl(x.valor); v.className = x.t === 'receita' ? 'pos' : 'neg';
+    li.querySelector('.x').onclick = () => { if (!confirm('Excluir "' + x.descricao + '"?')) return;
+      seguro(async () => { await api('fin-api', { acao:'excluir', tipo:x.t, id:x.id }); await carregar(); }); };
+    ul.appendChild(li); });
+}
+
+function mostraMeta(){ $('meta').value = D.meta ? String(D.meta).replace('.',',') : ''; }
+$('cats').innerHTML = CATS.map(c => '<option>' + c + '</option>').join('');
+$('mes').value = hoje().slice(0,7);
+document.querySelectorAll('input[type=date]').forEach(i => i.value = hoje());
+$('mes').onchange = () => seguro(carregar);
+$('meta').onchange = () => { const n = parse($('meta').value);
+  if (isNaN(n) || n < 0) { aviso('Digite uma meta válida.'); mostraMeta(); return; }
+  seguro(async () => { await api('fin-api', { acao:'definir_meta', mes: $('mes').value, meta:n }); await carregar(); }); };
+
+function envia(form, tipo){ form.onsubmit = e => { e.preventDefault();
+  const f = new FormData(form); const valor = parse(f.get('valor'));
+  if (isNaN(valor) || valor <= 0) { aviso('Digite um valor maior que zero.'); return; }
+  const corpo = { acao: tipo === 'despesa' ? 'adicionar_despesa' : 'adicionar_receita',
+    data: f.get('data'), descricao: f.get('desc').trim(), valor };
+  if (tipo === 'despesa') corpo.categoria = f.get('cat');
+  const btn = form.querySelector('button'); btn.disabled = true;
+  seguro(async () => {
+    await api('fin-api', corpo);
+    $('mes').value = corpo.data.slice(0,7);
+    form.querySelector('[name=valor]').value = ''; form.querySelector('[name=desc]').value = '';
+    await carregar();
+  }).finally(() => { btn.disabled = false; }); }; }
+envia($('fd'), 'despesa'); envia($('fr'), 'receita');
+
+if (token) { mostrar(true); seguro(carregar); } else { mostrar(false); }
+</script>
+</body>
+</html>
