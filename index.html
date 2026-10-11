@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <title>Finanças</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f766e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Finanças">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <style>
 :root{--bg:#EDF3F2;--panel:#fff;--ink:#15302d;--mute:#5d7471;--line:#d3dedc;--accent:#0f766e;--warn:#b86e00;--bad:#b3261e;--track:#d9e5e3}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1b1a;--panel:#172827;--ink:#e3efed;--mute:#93aaa7;--line:#2a403e;--accent:#3cc4b5;--warn:#e3a53a;--bad:#ff8a80;--track:#243a38}}
@@ -73,6 +80,8 @@ td:nth-child(2):last-child,.txt td:nth-child(2){white-space:normal}
   .panel{border:1px solid #bbb;break-inside:avoid}
   main{padding:0}
 }
+.chk{flex-direction:row;align-items:center;gap:8px;font-size:.88rem}
+.chk input{width:auto}
 </style>
 </head>
 <body>
@@ -84,6 +93,7 @@ td:nth-child(2):last-child,.txt td:nth-child(2){white-space:normal}
     <form class="panel" id="flogin">
       <label>Usuário<input name="usuario" autocomplete="username" required></label>
       <label>Senha<input name="senha" type="password" autocomplete="current-password" required></label>
+      <label class="chk"><input type="checkbox" name="manter"> Manter conectado neste aparelho</label>
       <button class="btn" type="submit" id="blogin">Entrar</button>
     </form>
   </section>
@@ -180,13 +190,13 @@ function parse(s){ s = String(s).trim().replace(/[^\d.,-]/g,'');
   const n = parseFloat(s); return isNaN(n) ? NaN : n; }
 
 let token = null;
-try { token = sessionStorage.getItem('fin_token'); } catch(e) {}
+try { token = sessionStorage.getItem('fin_token') || localStorage.getItem('fin_token'); } catch(e) {}
 let D = { meta:0, despesas:[], receitas:[] };
 
 function aviso(t, tipo){ const b = $('aviso'); b.textContent = t || ''; b.hidden = !t; b.className = 'aviso ' + (tipo||''); }
 function mostrar(logado){ $('tela-login').hidden = logado; $('app').hidden = !logado; }
 function sair(m){
-  token = null; try { sessionStorage.removeItem('fin_token'); } catch(e) {}
+  token = null; try { sessionStorage.removeItem('fin_token'); localStorage.removeItem('fin_token'); } catch(e) {}
   D = { meta:0, despesas:[], receitas:[] }; R = []; setVista(false); mostrar(false); aviso(m || '', 'info');
 }
 
@@ -212,7 +222,7 @@ $('flogin').onsubmit = e => { e.preventDefault();
   b.disabled = true; b.textContent = 'Entrando...';
   seguro(async () => {
     const d = await api('fin-login', { username: f.get('usuario').trim(), password: f.get('senha') });
-    token = d.token; try { sessionStorage.setItem('fin_token', token); } catch(e) {}
+    token = d.token; try { (f.get('manter') ? localStorage : sessionStorage).setItem('fin_token', token); } catch(e) {}
     $('flogin').reset(); mostrar(true); await carregar();
   }).finally(() => { b.disabled = false; b.textContent = 'Entrar'; });
 };
@@ -379,6 +389,7 @@ function baixarCsv(){
 $('bcsv').onclick = baixarCsv;
 
 if (token) { mostrar(true); seguro(carregar); } else { mostrar(false); }
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }
 </script>
 </body>
 </html>
