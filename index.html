@@ -145,8 +145,12 @@ a{color:var(--accent);font-weight:600}
     <div class="grid2">
       <form class="panel" id="fd">
         <h2>Nova despesa</h2>
-        <div class="row"><label>Data<input type="date" name="data" required></label>
-        <label>Valor (R$)<input name="valor" inputmode="decimal" placeholder="0,00" required></label></div>
+        <div class="row"><label class="full">Tipo<select name="tipo" id="tipo">
+          <option value="unica">Única</option><option value="parcelada">Parcelada</option><option value="fixa">Fixa (todo mês)</option></select></label></div>
+        <div class="row"><label><span id="t-data">Data</span><input type="date" name="data" required></label>
+        <label><span id="t-valor">Valor (R$)</span><input name="valor" inputmode="decimal" placeholder="0,00" required></label></div>
+        <div class="row" id="extra-parc" hidden><label class="full">Número de parcelas<input name="parcelas" type="number" min="2" max="60" value="12"></label></div>
+        <div class="row" id="extra-fixa" hidden><label class="full">Até o mês (opcional, deixe vazio se não tem fim)<input name="fim" type="month"></label></div>
         <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" placeholder="Ex.: Compras da semana" required></label>
         <label class="full">Categoria<select name="cat" id="cats"></select></label></div>
         <button class="btn out" type="submit">Adicionar despesa</button>
@@ -161,6 +165,7 @@ a{color:var(--accent);font-weight:600}
     </div>
 
     <section class="panel"><h2>Gastos por categoria</h2><div id="catlist"></div></section>
+    <section class="panel"><h2>Despesas fixas do mês</h2><ul class="list" id="flist"></ul></section>
     <section class="panel"><h2>Lançamentos do mês</h2><ul class="list" id="list"></ul></section>
     </div>
 
@@ -278,10 +283,11 @@ $('fcad').onsubmit = e => { e.preventDefault();
 
 async function carregar(){
   const d = await api('fin-api', { acao:'listar', mes: $('mes').value });
-  D = { meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[] };
+  D = { meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[], fixas: d.fixas||[] };
   mostraMeta(); render();
 }
 const soma = a => a.reduce((t,x) => t + (Number(x.valor)||0), 0);
+const descExib = x => x.descricao + (x.parcela ? ' · ' + x.parcela : '') + (x.fixa ? ' · fixa' : '');
 
 function render(){
   const m = $('mes').value, des = D.despesas, rec = D.receitas;
@@ -304,6 +310,20 @@ function render(){
     d.children[0].children[1].textContent = brl(x.v) + ' · ' + Math.round(p*100) + '%';
     d.querySelector('i').style.width = p*100 + '%'; cl.appendChild(d); });
 
+  const fl = $('flist'); fl.innerHTML = '';
+  const fx = D.fixas || [];
+  if (!fx.length) fl.innerHTML = '<li class="empty">Nenhuma despesa fixa neste mês. Use "Fixa (todo mês)" ao lançar uma despesa.</li>';
+  fx.forEach(f => { const li = document.createElement('li');
+    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span class="neg"></span><button class="x" title="Encerrar a partir deste mês" aria-label="Encerrar despesa fixa">✕</button>';
+    li.children[0].textContent = 'dia ' + String(f.dia).padStart(2, '0');
+    li.querySelector('.d').textContent = f.descricao;
+    li.querySelector('small').textContent = f.categoria + (f.fim ? ' · até ' + rotulo(f.fim) : ' · sem data final');
+    li.children[2].textContent = brl(f.valor);
+    li.querySelector('.x').onclick = () => {
+      if (!confirm('Encerrar "' + f.descricao + '" a partir de ' + rotulo($('mes').value) + '?\n\nOs meses anteriores continuam como estão.')) return;
+      seguro(async () => { await api('fin-api', { acao:'encerrar_fixa', id:f.id, mes:$('mes').value }); await carregar(); }); };
+    fl.appendChild(li); });
+
   const ul = $('list'); ul.innerHTML = '';
   const todos = [...rec.map(x => Object.assign({}, x, {t:'receita'})), ...des.map(x => Object.assign({}, x, {t:'despesa'}))]
     .sort((a,b) => String(b.data).localeCompare(String(a.data)));
@@ -312,16 +332,32 @@ function render(){
     li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span></span><button class="x" aria-label="Excluir lançamento">✕</button>';
     const dt = String(x.data);
     li.children[0].textContent = dt.slice(8,10) + '/' + dt.slice(5,7);
-    li.querySelector('.d').textContent = x.descricao;
+    li.querySelector('.d').textContent = descExib(x);
     li.querySelector('small').textContent = x.t === 'receita' ? 'Receita' : x.categoria;
     const v = li.children[2]; v.textContent = (x.t === 'receita' ? '+ ' : '− ') + brl(x.valor); v.className = x.t === 'receita' ? 'pos' : 'neg';
-    li.querySelector('.x').onclick = () => { if (!confirm('Excluir "' + x.descricao + '"?')) return;
+    const bx = li.querySelector('.x');
+    if (x.fixa) { bx.style.visibility = 'hidden'; }
+    else bx.onclick = () => {
+      if (x.grupo) {
+        if (confirm('Excluir TODAS as parcelas de "' + x.descricao + '"?\n\nOK = excluir todas\nCancelar = ver outras opções')) {
+          seguro(async () => { await api('fin-api', { acao:'excluir', grupo:x.grupo }); await carregar(); });
+        } else if (confirm('Excluir só esta parcela (' + x.parcela + ')?')) {
+          seguro(async () => { await api('fin-api', { acao:'excluir', tipo:'despesa', id:x.id }); await carregar(); });
+        }
+        return;
+      }
+      if (!confirm('Excluir "' + x.descricao + '"?')) return;
       seguro(async () => { await api('fin-api', { acao:'excluir', tipo:x.t, id:x.id }); await carregar(); }); };
     ul.appendChild(li); });
 }
 
 function mostraMeta(){ $('meta').value = D.meta ? String(D.meta).replace('.',',') : ''; }
 $('cats').innerHTML = CATS.map(c => '<option>' + c + '</option>').join('');
+function ajustaTipo(){ const t = $('tipo').value;
+  $('extra-parc').hidden = t !== 'parcelada'; $('extra-fixa').hidden = t !== 'fixa';
+  $('t-data').textContent = t === 'parcelada' ? 'Data da 1ª parcela' : t === 'fixa' ? 'Primeira cobrança' : 'Data';
+  $('t-valor').textContent = t === 'parcelada' ? 'Valor da parcela (R$)' : 'Valor (R$)'; }
+$('tipo').onchange = ajustaTipo;
 $('mes').value = hoje().slice(0,7);
 document.querySelectorAll('input[type=date]').forEach(i => i.value = hoje());
 $('mes').onchange = () => seguro(carregar);
@@ -334,7 +370,10 @@ function envia(form, tipo){ form.onsubmit = e => { e.preventDefault();
   if (isNaN(valor) || valor <= 0) { aviso('Digite um valor maior que zero.'); return; }
   const corpo = { acao: tipo === 'despesa' ? 'adicionar_despesa' : 'adicionar_receita',
     data: f.get('data'), descricao: f.get('desc').trim(), valor };
-  if (tipo === 'despesa') corpo.categoria = f.get('cat');
+  if (tipo === 'despesa') { corpo.categoria = f.get('cat'); const t = f.get('tipo');
+    if (t === 'parcelada') { corpo.acao = 'adicionar_parcelada'; corpo.parcelas = Number(f.get('parcelas')); }
+    else if (t === 'fixa') { corpo.acao = 'adicionar_fixa'; corpo.dia = Number(corpo.data.slice(8, 10));
+      corpo.inicio = corpo.data.slice(0, 7); corpo.fim = f.get('fim') || ''; } }
   const btn = form.querySelector('button'); btn.disabled = true;
   seguro(async () => {
     await api('fin-api', corpo);
@@ -411,7 +450,7 @@ function renderRel(){
 
   const top = todasDes.slice().sort((a, b) => Number(b.valor) - Number(a.valor)).slice(0, 5);
   tabela($('t-top'), ['Data','Descrição','Categoria','Valor'],
-    top.map(x => [dataBR(x.data), x.descricao, x.categoria, brl(x.valor)]));
+    top.map(x => [dataBR(x.data), descExib(x), x.categoria, brl(x.valor)]));
   $('rel-out').hidden = false;
 }
 
@@ -425,7 +464,7 @@ function baixarCsv(){
   const seguroCsv = s => /^[=+\-@]/.test(s) ? "'" + s : s;
   const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
   const linhas = [['Data','Tipo','Descrição','Categoria','Valor']];
-  todos.forEach(x => linhas.push([dataBR(x.data), x.t, seguroCsv(String(x.descricao)), x.t === 'Despesa' ? x.categoria : '',
+  todos.forEach(x => linhas.push([dataBR(x.data), x.t, seguroCsv(descExib(x)), x.t === 'Despesa' ? x.categoria : '',
     Number(x.valor).toFixed(2).replace('.', ',')]));
   const csv = '\uFEFF' + linhas.map(l => l.map(esc).join(';')).join('\r\n');
   const a = document.createElement('a');
