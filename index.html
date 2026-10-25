@@ -84,6 +84,7 @@ td:nth-child(2):last-child,.txt td:nth-child(2){white-space:normal}
 .chk input{width:auto}
 a{color:var(--accent);font-weight:600}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+.rapidos{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -172,10 +173,17 @@ a{color:var(--accent);font-weight:600}
     <section id="vis-rel" hidden>
       <div class="panel noprint">
         <h2>Relatório</h2>
-        <div class="row">
-          <label>De<input type="month" id="rde"></label>
-          <label>Até<input type="month" id="rate"></label>
+        <div class="rapidos">
+          <button class="link" type="button" data-r="mes">Este mês</button>
+          <button class="link" type="button" data-r="mespassado">Mês passado</button>
+          <button class="link" type="button" data-r="30">Últimos 30 dias</button>
+          <button class="link" type="button" data-r="3m">Últimos 3 meses</button>
         </div>
+        <div class="row">
+          <label>De<input type="date" id="rde"></label>
+          <label>Até<input type="date" id="rate"></label>
+        </div>
+        <div class="row"><label class="full">Categoria<select id="rcat"><option value="">Todas as categorias</option></select></label></div>
         <button class="btn" id="bgerar" type="button">Gerar relatório</button>
       </div>
       <div id="rel-out" hidden>
@@ -191,6 +199,7 @@ a{color:var(--accent);font-weight:600}
         <section class="panel"><h2>Mês a mês</h2><div class="scroll"><table id="t-meses"></table></div></section>
         <section class="panel"><h2>Por categoria</h2><div class="scroll"><table id="t-cats"></table></div></section>
         <section class="panel"><h2>Maiores despesas</h2><div class="scroll"><table id="t-top" class="txt"></table></div></section>
+        <section class="panel"><h2>Lançamentos do período</h2><div class="scroll"><table id="t-lanc" class="txt"></table></div></section>
         <div class="acoes noprint">
           <button class="btn out" id="bpdf" type="button">Imprimir / salvar em PDF</button>
           <button class="btn" id="bcsv" type="button">Baixar CSV (Excel)</button>
@@ -385,10 +394,11 @@ envia($('fd'), 'despesa'); envia($('fr'), 'receita');
 
 
 // ---------- Relatório ----------
-let R = [];
+let R = [], PER = { de:'', ate:'', cat:'' };
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const rotulo = ym => MESES[Number(ym.slice(5,7))-1] + '/' + ym.slice(0,4);
 const dataBR = d => String(d).slice(8,10) + '/' + String(d).slice(5,7) + '/' + String(d).slice(0,4);
+const isoLocal = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
 function setVista(rel){
   $('vis-painel').hidden = rel; $('vis-rel').hidden = !rel; $('ctrl-painel').hidden = rel;
   $('verrel').textContent = rel ? 'Painel' : 'Relatório';
@@ -400,27 +410,37 @@ function mesesEntre(a, b){
   while ((y < y2 || (y === y2 && m <= m2)) && out.length < 13){ out.push(y + '-' + pad(m)); m++; if (m > 12){ m = 1; y++; } }
   return out;
 }
-(function(){ const d = new Date();
-  $('rate').value = d.getFullYear() + '-' + pad(d.getMonth()+1);
-  const i = new Date(d.getFullYear(), d.getMonth()-2, 1);
-  $('rde').value = i.getFullYear() + '-' + pad(i.getMonth()+1); })();
+$('rcat').innerHTML += CATS.map(c => '<option>' + c + '</option>').join('');
+function rapido(k){
+  const h = new Date(); let de, ate;
+  if (k === 'mes'){ de = new Date(h.getFullYear(), h.getMonth(), 1); ate = new Date(h.getFullYear(), h.getMonth()+1, 0); }
+  else if (k === 'mespassado'){ de = new Date(h.getFullYear(), h.getMonth()-1, 1); ate = new Date(h.getFullYear(), h.getMonth(), 0); }
+  else if (k === '30'){ ate = h; de = new Date(h.getFullYear(), h.getMonth(), h.getDate()-29); }
+  else { ate = h; de = new Date(h.getFullYear(), h.getMonth()-2, 1); }
+  $('rde').value = isoLocal(de); $('rate').value = isoLocal(ate);
+}
+rapido('3m');
+document.querySelectorAll('[data-r]').forEach(bt => { bt.onclick = () => { rapido(bt.dataset.r); $('bgerar').click(); }; });
 
 $('bgerar').onclick = async () => {
-  const de = $('rde').value, ate = $('rate').value;
+  const de = $('rde').value, ate = $('rate').value, cat = $('rcat').value;
   if (!de || !ate || de > ate){ aviso('Escolha um período válido: "De" não pode ser depois de "Até".'); return; }
-  const ms = mesesEntre(de, ate);
-  if (ms.length > 12){ aviso('Escolha no máximo 12 meses.'); return; }
-  const b = $('bgerar'); b.disabled = true;
+  const ms = mesesEntre(de.slice(0,7), ate.slice(0,7));
+  if (ms.length > 12){ aviso('Escolha um período de no máximo 12 meses.'); return; }
+  const bt = $('bgerar'); bt.disabled = true;
   await seguro(async () => {
+    const dentro = x => String(x.data) >= de && String(x.data) <= ate;
     const dados = [];
     for (let i = 0; i < ms.length; i++){
-      b.textContent = 'Carregando ' + (i+1) + ' de ' + ms.length + '...';
+      bt.textContent = 'Carregando ' + (i+1) + ' de ' + ms.length + '...';
       const d = await api('fin-api', { acao:'listar', mes: ms[i] });
-      dados.push({ mes: ms[i], meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[] });
+      dados.push({ mes: ms[i], meta: Number(d.meta)||0,
+        despesas: (d.despesas||[]).filter(dentro).filter(x => !cat || x.categoria === cat),
+        receitas: cat ? [] : (d.receitas||[]).filter(dentro) });
     }
-    R = dados; renderRel();
+    PER = { de, ate, cat }; R = dados; renderRel();
   });
-  b.disabled = false; b.textContent = 'Gerar relatório';
+  bt.disabled = false; bt.textContent = 'Gerar relatório';
 };
 
 function celula(tr, txt, th){ const c = document.createElement(th ? 'th' : 'td'); c.textContent = txt; tr.appendChild(c); return c; }
@@ -432,25 +452,38 @@ function tabela(el, cab, linhas, rodape){
 }
 
 function renderRel(){
+  const cat = PER.cat, n = R.length;
   const todasDes = R.flatMap(m => m.despesas), todasRec = R.flatMap(m => m.receitas);
-  const totDes = soma(todasDes), totRec = soma(todasRec), n = R.length;
-  $('rel-titulo').textContent = n === 1 ? rotulo(R[0].mes) : rotulo(R[0].mes) + ' a ' + rotulo(R[n-1].mes);
-  $('rel-sub').textContent = (todasDes.length + todasRec.length) + ' lançamentos · ' + n + (n === 1 ? ' mês' : ' meses');
-  $('rr').textContent = brl(totRec); $('rg').textContent = brl(totDes); $('rs').textContent = brl(totRec - totDes);
+  const totDes = soma(todasDes), totRec = soma(todasRec);
+  $('rel-titulo').textContent = dataBR(PER.de) + ' a ' + dataBR(PER.ate) + (cat ? ' · ' + cat : '');
+  $('rel-sub').textContent = (todasDes.length + todasRec.length) + ' lançamentos' + (cat ? ' (só despesas desta categoria)' : '');
+  $('rr').textContent = cat ? '—' : brl(totRec); $('rg').textContent = brl(totDes);
+  $('rs').textContent = cat ? '—' : brl(totRec - totDes);
 
   tabela($('t-meses'), ['Mês','Meta','Gasto','% da meta','Recebido','Sobra'],
-    R.map(m => { const g = soma(m.despesas), r = soma(m.receitas), p = m.meta > 0 ? Math.round(g / m.meta * 100) : null;
-      return [rotulo(m.mes), m.meta > 0 ? brl(m.meta) : '—', brl(g), p === null ? '—' : (p > 100 ? '⚠ ' : '') + p + '%', brl(r), brl(r - g)]; }),
-    ['Total', '', brl(totDes), '', brl(totRec), brl(totRec - totDes)]);
+    R.map(m => {
+      const g = soma(m.despesas), r = soma(m.receitas);
+      const [y, mm] = m.mes.split('-').map(Number);
+      const completo = PER.de <= m.mes + '-01' && PER.ate >= m.mes + '-' + pad(new Date(y, mm, 0).getDate());
+      const p = (completo && !cat && m.meta > 0) ? Math.round(g / m.meta * 100) : null;
+      return [rotulo(m.mes) + (completo ? '' : ' (parcial)'), m.meta > 0 && !cat ? brl(m.meta) : '—', brl(g),
+              p === null ? '—' : (p > 100 ? '⚠ ' : '') + p + '%', cat ? '—' : brl(r), cat ? '—' : brl(r - g)]; }),
+    ['Total', '', brl(totDes), '', cat ? '—' : brl(totRec), cat ? '—' : brl(totRec - totDes)]);
 
-  const porCat = CATS.map(c => ({ c, v: soma(todasDes.filter(x => x.categoria === c)) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
-  tabela($('t-cats'), ['Categoria','Total','% do gasto','Média por mês'],
-    porCat.map(x => [x.c, brl(x.v), (totDes ? Math.round(x.v / totDes * 100) : 0) + '%', brl(x.v / n)]),
-    porCat.length ? ['Total', brl(totDes), '100%', brl(totDes / n)] : null);
+  const porCat = CATS.map(c => { const l = todasDes.filter(x => x.categoria === c); return { c, v: soma(l), q: l.length }; })
+    .filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  tabela($('t-cats'), ['Categoria','Total','% do gasto','Qtd'],
+    porCat.map(x => [x.c, brl(x.v), (totDes ? Math.round(x.v / totDes * 100) : 0) + '%', String(x.q)]),
+    porCat.length ? ['Total', brl(totDes), '100%', String(todasDes.length)] : null);
 
   const top = todasDes.slice().sort((a, b) => Number(b.valor) - Number(a.valor)).slice(0, 5);
   tabela($('t-top'), ['Data','Descrição','Categoria','Valor'],
     top.map(x => [dataBR(x.data), descExib(x), x.categoria, brl(x.valor)]));
+
+  const todos = [...todasRec.map(x => ({ data: x.data, desc: x.descricao, cat: 'Receita', v: '+ ' + brl(x.valor) })),
+                 ...todasDes.map(x => ({ data: x.data, desc: descExib(x), cat: x.categoria, v: '− ' + brl(x.valor) }))]
+    .sort((a, b) => String(a.data).localeCompare(String(b.data)));
+  tabela($('t-lanc'), ['Data','Descrição','Categoria','Valor'], todos.map(x => [dataBR(x.data), x.desc, x.cat, x.v]));
   $('rel-out').hidden = false;
 }
 
@@ -469,7 +502,7 @@ function baixarCsv(){
   const csv = '\uFEFF' + linhas.map(l => l.map(esc).join(';')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
-  a.download = 'financas-' + R[0].mes + '-a-' + R[R.length-1].mes + '.csv';
+  a.download = 'financas-' + PER.de + '-a-' + PER.ate + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
