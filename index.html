@@ -85,6 +85,12 @@ td:nth-child(2):last-child,.txt td:nth-child(2){white-space:normal}
 a{color:var(--accent);font-weight:600}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 .rapidos{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.ed,.x{background:none;border:0;color:var(--mute);cursor:pointer;font-size:1.05rem;border-radius:6px;height:32px}
+.ed:hover{color:var(--accent)}
+.list.edit li{grid-template-columns:48px 1fr auto 32px 32px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.modal form{width:100%;max-width:420px;max-height:92vh;overflow:auto;margin:0}
+.modal .row .btn{margin-top:4px}
 </style>
 </head>
 <body>
@@ -153,7 +159,8 @@ a{color:var(--accent);font-weight:600}
         <div class="row" id="extra-parc" hidden><label class="full">Número de parcelas<input name="parcelas" type="number" min="2" max="60" value="12"></label></div>
         <div class="row" id="extra-fixa" hidden><label class="full">Até o mês (opcional, deixe vazio se não tem fim)<input name="fim" type="month"></label></div>
         <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" placeholder="Ex.: Compras da semana" required></label>
-        <label class="full">Categoria<select name="cat" id="cats"></select></label></div>
+        <label class="full">Categoria<select name="cat" id="cats"></select></label>
+        <label class="full">Cartão<select name="cartao" id="cartao"></select></label></div>
         <button class="btn out" type="submit">Adicionar despesa</button>
       </form>
       <form class="panel" id="fr">
@@ -167,7 +174,16 @@ a{color:var(--accent);font-weight:600}
 
     <section class="panel"><h2>Gastos por categoria</h2><div id="catlist"></div></section>
     <section class="panel"><h2>Despesas fixas do mês</h2><ul class="list" id="flist"></ul></section>
-    <section class="panel"><h2>Lançamentos do mês</h2><ul class="list" id="list"></ul></section>
+    <section class="panel"><h2>Meus cartões</h2>
+      <p class="sub" style="margin:-6px 0 8px">Gastos do mês por cartão, pela data da compra.</p>
+      <ul class="list" id="clist"></ul>
+      <form id="fcart" class="row" style="margin:14px 0 0">
+        <label>Nome do cartão<input name="nome" maxlength="30" placeholder="Ex.: Nubank" required></label>
+        <label>Vence no dia<input name="venc" type="number" min="1" max="31" placeholder="Ex.: 5" required></label>
+        <button class="btn out full" type="submit">Adicionar cartão</button>
+      </form>
+    </section>
+    <section class="panel"><h2>Lançamentos do mês</h2><ul class="list edit" id="list"></ul></section>
     </div>
 
     <section id="vis-rel" hidden>
@@ -183,7 +199,8 @@ a{color:var(--accent);font-weight:600}
           <label>De<input type="date" id="rde"></label>
           <label>Até<input type="date" id="rate"></label>
         </div>
-        <div class="row"><label class="full">Categoria<select id="rcat"><option value="">Todas as categorias</option></select></label></div>
+        <div class="row"><label class="full">Categoria<select id="rcat"><option value="">Todas as categorias</option></select></label>
+          <label class="full">Cartão<select id="rcart"></select></label></div>
         <button class="btn" id="bgerar" type="button">Gerar relatório</button>
       </div>
       <div id="rel-out" hidden>
@@ -198,6 +215,7 @@ a{color:var(--accent);font-weight:600}
         </section>
         <section class="panel"><h2>Mês a mês</h2><div class="scroll"><table id="t-meses"></table></div></section>
         <section class="panel"><h2>Por categoria</h2><div class="scroll"><table id="t-cats"></table></div></section>
+        <section class="panel"><h2>Por cartão</h2><div class="scroll"><table id="t-cart"></table></div></section>
         <section class="panel"><h2>Maiores despesas</h2><div class="scroll"><table id="t-top" class="txt"></table></div></section>
         <section class="panel"><h2>Lançamentos do período</h2><div class="scroll"><table id="t-lanc" class="txt"></table></div></section>
         <div class="acoes noprint">
@@ -209,6 +227,20 @@ a{color:var(--accent);font-weight:600}
     <p class="note"><a href="privacidade.html">Política de privacidade</a></p>
   </section>
 </main>
+
+<div class="modal" id="modal" hidden>
+  <form class="panel" id="fedit">
+    <h2 id="edit-titulo">Editar lançamento</h2>
+    <div class="aviso" id="edit-erro" role="alert" hidden></div>
+    <p class="sub" id="edit-nota" hidden style="margin:-6px 0 10px">Isto altera só esta parcela.</p>
+    <div class="row"><label>Data<input type="date" name="data" required></label>
+    <label>Valor (R$)<input name="valor" inputmode="decimal" required></label></div>
+    <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" required></label></div>
+    <div class="row" id="edit-despesa"><label class="full">Categoria<select name="cat" id="ecat"></select></label>
+    <label class="full">Cartão<select name="cartao" id="ecart"></select></label></div>
+    <div class="row"><button class="btn" type="submit">Salvar</button><button class="btn out" type="button" id="edit-cancelar">Cancelar</button></div>
+  </form>
+</div>
 <script>
 const API = 'https://rmfidelis-n8n.ddns.net/webhook';
 const CATS = ['Supermercado','Casa','Transporte','Saúde','Alimentação fora','Lazer','Outros'];
@@ -223,7 +255,7 @@ function parse(s){ s = String(s).trim().replace(/[^\d.,-]/g,'');
 
 let token = null;
 try { token = sessionStorage.getItem('fin_token') || localStorage.getItem('fin_token'); } catch(e) {}
-let D = { meta:0, despesas:[], receitas:[] };
+let D = { meta:0, despesas:[], receitas:[], fixas:[], cartoes:[] };
 
 function aviso(t, tipo){ const b = $('aviso'); b.textContent = t || ''; b.hidden = !t; b.className = 'aviso ' + (tipo||''); }
 let vistaAuth = /[?&]cadastro/.test(location.search) ? 'cadastro' : 'login';
@@ -235,7 +267,7 @@ function mostrar(logado){
 function irPara(v){ vistaAuth = v; aviso(''); mostrar(false); }
 function sair(m){
   token = null; try { sessionStorage.removeItem('fin_token'); localStorage.removeItem('fin_token'); } catch(e) {}
-  D = { meta:0, despesas:[], receitas:[] }; R = []; setVista(false); mostrar(false); aviso(m || '', 'info');
+  D = { meta:0, despesas:[], receitas:[] }; R = []; $('modal').hidden = true; setVista(false); mostrar(false); aviso(m || '', 'info');
 }
 
 async function api(rota, corpo){
@@ -292,10 +324,21 @@ $('fcad').onsubmit = e => { e.preventDefault();
 
 async function carregar(){
   const d = await api('fin-api', { acao:'listar', mes: $('mes').value });
-  D = { meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[], fixas: d.fixas||[] };
+  D = { meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[], fixas: d.fixas||[], cartoes: d.cartoes||[] };
   mostraMeta(); render();
 }
 const soma = a => a.reduce((t,x) => t + (Number(x.valor)||0), 0);
+const cartaoNome = id => { const c = (D.cartoes || []).find(c => c.id === id); return c ? c.nome : 'cartão removido'; };
+function montaCartoes(){
+  const cs = D.cartoes || [];
+  const preencher = (el, primeiras) => { const atual = el.value; el.innerHTML = '';
+    primeiras.concat(cs.map(c => [c.id, c.nome + ' · vence dia ' + pad(c.vencimento)])).forEach(([v, t]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; el.appendChild(o); });
+    if (Array.from(el.options).some(o => o.value === atual)) el.value = atual; };
+  preencher($('cartao'), [['', 'Sem cartão (dinheiro, Pix, débito)']]);
+  preencher($('ecart'), [['', 'Sem cartão']]);
+  preencher($('rcart'), [['', 'Todos os cartões'], ['__none', 'Sem cartão']]);
+}
 const descExib = x => x.descricao + (x.parcela ? ' · ' + x.parcela : '') + (x.fixa ? ' · fixa' : '');
 
 function render(){
@@ -319,6 +362,24 @@ function render(){
     d.children[0].children[1].textContent = brl(x.v) + ' · ' + Math.round(p*100) + '%';
     d.querySelector('i').style.width = p*100 + '%'; cl.appendChild(d); });
 
+  montaCartoes();
+  const cl2 = $('clist'); cl2.innerHTML = '';
+  const cs = D.cartoes || [];
+  if (!cs.length) cl2.innerHTML = '<li class="empty">Nenhum cartão cadastrado. Adicione abaixo para marcar em cada despesa.</li>';
+  const linhaCartao = (dia, nome, sub, total, id) => { const li = document.createElement('li');
+    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span class="neg"></span><button class="x" aria-label="Remover cartão">✕</button>';
+    li.children[0].textContent = dia; li.querySelector('.d').textContent = nome; li.querySelector('small').textContent = sub;
+    li.children[2].textContent = brl(total);
+    const bt = li.querySelector('.x');
+    if (!id) bt.style.visibility = 'hidden';
+    else bt.onclick = () => { if (!confirm('Remover o cartão "' + nome + '"?\n\nOs lançamentos continuam, mas ficam sem o nome do cartão.')) return;
+      seguro(async () => { await api('fin-api', { acao:'remover_cartao', id }); await carregar(); }); };
+    cl2.appendChild(li); };
+  cs.forEach(c => { const l = des.filter(x => x.cartao === c.id);
+    linhaCartao('dia ' + pad(c.vencimento), c.nome, l.length + (l.length === 1 ? ' lançamento' : ' lançamentos'), soma(l), c.id); });
+  const semC = des.filter(x => !x.cartao);
+  if (cs.length && semC.length) linhaCartao('', 'Sem cartão', semC.length + (semC.length === 1 ? ' lançamento' : ' lançamentos'), soma(semC), '');
+
   const fl = $('flist'); fl.innerHTML = '';
   const fx = D.fixas || [];
   if (!fx.length) fl.innerHTML = '<li class="empty">Nenhuma despesa fixa neste mês. Use "Fixa (todo mês)" ao lançar uma despesa.</li>';
@@ -326,7 +387,7 @@ function render(){
     li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span class="neg"></span><button class="x" title="Encerrar a partir deste mês" aria-label="Encerrar despesa fixa">✕</button>';
     li.children[0].textContent = 'dia ' + String(f.dia).padStart(2, '0');
     li.querySelector('.d').textContent = f.descricao;
-    li.querySelector('small').textContent = f.categoria + (f.fim ? ' · até ' + rotulo(f.fim) : ' · sem data final');
+    li.querySelector('small').textContent = f.categoria + (f.cartao ? ' · ' + cartaoNome(f.cartao) : '') + (f.fim ? ' · até ' + rotulo(f.fim) : ' · sem data final');
     li.children[2].textContent = brl(f.valor);
     li.querySelector('.x').onclick = () => {
       if (!confirm('Encerrar "' + f.descricao + '" a partir de ' + rotulo($('mes').value) + '?\n\nOs meses anteriores continuam como estão.')) return;
@@ -338,14 +399,17 @@ function render(){
     .sort((a,b) => String(b.data).localeCompare(String(a.data)));
   if (!todos.length) ul.innerHTML = '<li class="empty">Nada lançado neste mês. Adicione uma receita ou despesa acima.</li>';
   todos.forEach(x => { const li = document.createElement('li');
-    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span></span><button class="x" aria-label="Excluir lançamento">✕</button>';
+    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span></span><button class="ed" aria-label="Editar lançamento" title="Editar">✎</button><button class="x" aria-label="Excluir lançamento">✕</button>';
     const dt = String(x.data);
     li.children[0].textContent = dt.slice(8,10) + '/' + dt.slice(5,7);
     li.querySelector('.d').textContent = descExib(x);
-    li.querySelector('small').textContent = x.t === 'receita' ? 'Receita' : x.categoria;
+    li.querySelector('small').textContent = x.t === 'receita' ? 'Receita' : x.categoria + (x.cartao ? ' · ' + cartaoNome(x.cartao) : '');
     const v = li.children[2]; v.textContent = (x.t === 'receita' ? '+ ' : '− ') + brl(x.valor); v.className = x.t === 'receita' ? 'pos' : 'neg';
     const bx = li.querySelector('.x');
-    if (x.fixa) { bx.style.visibility = 'hidden'; }
+    const be = li.querySelector('.ed');
+    if (x.fixa) { bx.style.visibility = 'hidden'; be.style.visibility = 'hidden'; }
+    else be.onclick = () => abrirEdicao(x);
+    if (x.fixa) { }
     else bx.onclick = () => {
       if (x.grupo) {
         if (confirm('Excluir TODAS as parcelas de "' + x.descricao + '"?\n\nOK = excluir todas\nCancelar = ver outras opções')) {
@@ -362,6 +426,40 @@ function render(){
 
 function mostraMeta(){ $('meta').value = D.meta ? String(D.meta).replace('.',',') : ''; }
 $('cats').innerHTML = CATS.map(c => '<option>' + c + '</option>').join('');
+$('ecat').innerHTML = $('cats').innerHTML;
+
+let editando = null;
+function abrirEdicao(x){
+  editando = x; const f = $('fedit');
+  f.querySelector('[name=data]').value = x.data;
+  f.querySelector('[name=valor]').value = String(x.valor).replace('.', ',');
+  f.querySelector('[name=desc]').value = x.descricao;
+  $('edit-despesa').hidden = x.t === 'receita';
+  if (x.t === 'despesa') { $('ecat').value = x.categoria; $('ecart').value = x.cartao || ''; }
+  $('edit-titulo').textContent = x.t === 'receita' ? 'Editar receita' : 'Editar despesa';
+  $('edit-nota').hidden = !x.parcela; $('edit-erro').hidden = true;
+  $('modal').hidden = false;
+}
+const fechaEdicao = () => { $('modal').hidden = true; editando = null; };
+$('edit-cancelar').onclick = fechaEdicao;
+$('modal').onclick = e => { if (e.target === $('modal')) fechaEdicao(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) fechaEdicao(); });
+$('fedit').onsubmit = e => { e.preventDefault(); if (!editando) return;
+  const f = new FormData($('fedit')); const valor = parse(f.get('valor'));
+  const erro = m => { $('edit-erro').textContent = m; $('edit-erro').hidden = false; };
+  if (isNaN(valor) || valor <= 0) { erro('Digite um valor maior que zero.'); return; }
+  const corpo = { acao:'editar', tipo: editando.t, id: editando.id, data: f.get('data'), descricao: f.get('desc').trim(), valor };
+  if (editando.t === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; }
+  const bt = $('fedit').querySelector('button[type=submit]'); bt.disabled = true; $('edit-erro').hidden = true;
+  (async () => { try { await api('fin-api', corpo); fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar(); }
+    catch (err) { if (err.message) erro(err.message); } finally { bt.disabled = false; } })();
+};
+
+$('fcart').onsubmit = e => { e.preventDefault(); const f = new FormData($('fcart'));
+  const venc = Number(f.get('venc'));
+  if (!Number.isInteger(venc) || venc < 1 || venc > 31) { aviso('Digite um dia de vencimento de 1 a 31.'); return; }
+  seguro(async () => { await api('fin-api', { acao:'adicionar_cartao', nome: f.get('nome').trim(), vencimento: venc });
+    $('fcart').reset(); await carregar(); }); };
 function ajustaTipo(){ const t = $('tipo').value;
   $('extra-parc').hidden = t !== 'parcelada'; $('extra-fixa').hidden = t !== 'fixa';
   $('t-data').textContent = t === 'parcelada' ? 'Data da 1ª parcela' : t === 'fixa' ? 'Primeira cobrança' : 'Data';
@@ -379,7 +477,7 @@ function envia(form, tipo){ form.onsubmit = e => { e.preventDefault();
   if (isNaN(valor) || valor <= 0) { aviso('Digite um valor maior que zero.'); return; }
   const corpo = { acao: tipo === 'despesa' ? 'adicionar_despesa' : 'adicionar_receita',
     data: f.get('data'), descricao: f.get('desc').trim(), valor };
-  if (tipo === 'despesa') { corpo.categoria = f.get('cat'); const t = f.get('tipo');
+  if (tipo === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; const t = f.get('tipo');
     if (t === 'parcelada') { corpo.acao = 'adicionar_parcelada'; corpo.parcelas = Number(f.get('parcelas')); }
     else if (t === 'fixa') { corpo.acao = 'adicionar_fixa'; corpo.dia = Number(corpo.data.slice(8, 10));
       corpo.inicio = corpo.data.slice(0, 7); corpo.fim = f.get('fim') || ''; } }
@@ -394,7 +492,7 @@ envia($('fd'), 'despesa'); envia($('fr'), 'receita');
 
 
 // ---------- Relatório ----------
-let R = [], PER = { de:'', ate:'', cat:'' };
+let R = [], PER = { de:'', ate:'', cat:'', cart:'' };
 const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const rotulo = ym => MESES[Number(ym.slice(5,7))-1] + '/' + ym.slice(0,4);
 const dataBR = d => String(d).slice(8,10) + '/' + String(d).slice(5,7) + '/' + String(d).slice(0,4);
@@ -423,7 +521,7 @@ rapido('3m');
 document.querySelectorAll('[data-r]').forEach(bt => { bt.onclick = () => { rapido(bt.dataset.r); $('bgerar').click(); }; });
 
 $('bgerar').onclick = async () => {
-  const de = $('rde').value, ate = $('rate').value, cat = $('rcat').value;
+  const de = $('rde').value, ate = $('rate').value, cat = $('rcat').value, cart = $('rcart').value;
   if (!de || !ate || de > ate){ aviso('Escolha um período válido: "De" não pode ser depois de "Até".'); return; }
   const ms = mesesEntre(de.slice(0,7), ate.slice(0,7));
   if (ms.length > 12){ aviso('Escolha um período de no máximo 12 meses.'); return; }
@@ -435,10 +533,11 @@ $('bgerar').onclick = async () => {
       bt.textContent = 'Carregando ' + (i+1) + ' de ' + ms.length + '...';
       const d = await api('fin-api', { acao:'listar', mes: ms[i] });
       dados.push({ mes: ms[i], meta: Number(d.meta)||0,
-        despesas: (d.despesas||[]).filter(dentro).filter(x => !cat || x.categoria === cat),
-        receitas: cat ? [] : (d.receitas||[]).filter(dentro) });
+        despesas: (d.despesas||[]).filter(dentro).filter(x => !cat || x.categoria === cat)
+          .filter(x => !cart || (cart === '__none' ? !x.cartao : x.cartao === cart)),
+        receitas: (cat || cart) ? [] : (d.receitas||[]).filter(dentro) });
     }
-    PER = { de, ate, cat }; R = dados; renderRel();
+    PER = { de, ate, cat, cart }; R = dados; renderRel();
   });
   bt.disabled = false; bt.textContent = 'Gerar relatório';
 };
@@ -452,23 +551,23 @@ function tabela(el, cab, linhas, rodape){
 }
 
 function renderRel(){
-  const cat = PER.cat, n = R.length;
+  const cat = PER.cat, cart = PER.cart, filtra = !!(cat || cart), n = R.length;
   const todasDes = R.flatMap(m => m.despesas), todasRec = R.flatMap(m => m.receitas);
   const totDes = soma(todasDes), totRec = soma(todasRec);
-  $('rel-titulo').textContent = dataBR(PER.de) + ' a ' + dataBR(PER.ate) + (cat ? ' · ' + cat : '');
-  $('rel-sub').textContent = (todasDes.length + todasRec.length) + ' lançamentos' + (cat ? ' (só despesas desta categoria)' : '');
-  $('rr').textContent = cat ? '—' : brl(totRec); $('rg').textContent = brl(totDes);
-  $('rs').textContent = cat ? '—' : brl(totRec - totDes);
+  $('rel-titulo').textContent = dataBR(PER.de) + ' a ' + dataBR(PER.ate) + (cat ? ' · ' + cat : '') + (cart ? ' · ' + (cart === '__none' ? 'sem cartão' : cartaoNome(cart)) : '');
+  $('rel-sub').textContent = (todasDes.length + todasRec.length) + ' lançamentos' + (filtra ? ' (só despesas do filtro escolhido)' : '');
+  $('rr').textContent = filtra ? '—' : brl(totRec); $('rg').textContent = brl(totDes);
+  $('rs').textContent = filtra ? '—' : brl(totRec - totDes);
 
   tabela($('t-meses'), ['Mês','Meta','Gasto','% da meta','Recebido','Sobra'],
     R.map(m => {
       const g = soma(m.despesas), r = soma(m.receitas);
       const [y, mm] = m.mes.split('-').map(Number);
       const completo = PER.de <= m.mes + '-01' && PER.ate >= m.mes + '-' + pad(new Date(y, mm, 0).getDate());
-      const p = (completo && !cat && m.meta > 0) ? Math.round(g / m.meta * 100) : null;
-      return [rotulo(m.mes) + (completo ? '' : ' (parcial)'), m.meta > 0 && !cat ? brl(m.meta) : '—', brl(g),
-              p === null ? '—' : (p > 100 ? '⚠ ' : '') + p + '%', cat ? '—' : brl(r), cat ? '—' : brl(r - g)]; }),
-    ['Total', '', brl(totDes), '', cat ? '—' : brl(totRec), cat ? '—' : brl(totRec - totDes)]);
+      const p = (completo && !filtra && m.meta > 0) ? Math.round(g / m.meta * 100) : null;
+      return [rotulo(m.mes) + (completo ? '' : ' (parcial)'), m.meta > 0 && !filtra ? brl(m.meta) : '—', brl(g),
+              p === null ? '—' : (p > 100 ? '⚠ ' : '') + p + '%', filtra ? '—' : brl(r), filtra ? '—' : brl(r - g)]; }),
+    ['Total', '', brl(totDes), '', filtra ? '—' : brl(totRec), filtra ? '—' : brl(totRec - totDes)]);
 
   const porCat = CATS.map(c => { const l = todasDes.filter(x => x.categoria === c); return { c, v: soma(l), q: l.length }; })
     .filter(x => x.v > 0).sort((a, b) => b.v - a.v);
@@ -476,12 +575,21 @@ function renderRel(){
     porCat.map(x => [x.c, brl(x.v), (totDes ? Math.round(x.v / totDes * 100) : 0) + '%', String(x.q)]),
     porCat.length ? ['Total', brl(totDes), '100%', String(todasDes.length)] : null);
 
+  const csR = D.cartoes || [];
+  const linhasC = csR.map(c => { const l = todasDes.filter(x => x.cartao === c.id); return [c.nome, 'dia ' + pad(c.vencimento), brl(soma(l)), String(l.length), l.length]; })
+    .filter(r => r[4] > 0).map(r => r.slice(0, 4));
+  const semCartao = todasDes.filter(x => !x.cartao);
+  const orfaos = todasDes.filter(x => x.cartao && !csR.some(c => c.id === x.cartao));
+  if (semCartao.length) linhasC.push(['Sem cartão', '—', brl(soma(semCartao)), String(semCartao.length)]);
+  if (orfaos.length) linhasC.push(['Cartão removido', '—', brl(soma(orfaos)), String(orfaos.length)]);
+  tabela($('t-cart'), ['Cartão','Vencimento','Total','Qtd'], linhasC);
+
   const top = todasDes.slice().sort((a, b) => Number(b.valor) - Number(a.valor)).slice(0, 5);
   tabela($('t-top'), ['Data','Descrição','Categoria','Valor'],
     top.map(x => [dataBR(x.data), descExib(x), x.categoria, brl(x.valor)]));
 
   const todos = [...todasRec.map(x => ({ data: x.data, desc: x.descricao, cat: 'Receita', v: '+ ' + brl(x.valor) })),
-                 ...todasDes.map(x => ({ data: x.data, desc: descExib(x), cat: x.categoria, v: '− ' + brl(x.valor) }))]
+                 ...todasDes.map(x => ({ data: x.data, desc: descExib(x), cat: x.categoria + (x.cartao ? ' · ' + cartaoNome(x.cartao) : ''), v: '− ' + brl(x.valor) }))]
     .sort((a, b) => String(a.data).localeCompare(String(b.data)));
   tabela($('t-lanc'), ['Data','Descrição','Categoria','Valor'], todos.map(x => [dataBR(x.data), x.desc, x.cat, x.v]));
   $('rel-out').hidden = false;
@@ -496,8 +604,9 @@ function baixarCsv(){
   todos.sort((a, b) => String(a.data).localeCompare(String(b.data)));
   const seguroCsv = s => /^[=+\-@]/.test(s) ? "'" + s : s;
   const esc = v => '"' + String(v).replace(/"/g, '""') + '"';
-  const linhas = [['Data','Tipo','Descrição','Categoria','Valor']];
+  const linhas = [['Data','Tipo','Descrição','Categoria','Cartão','Valor']];
   todos.forEach(x => linhas.push([dataBR(x.data), x.t, seguroCsv(descExib(x)), x.t === 'Despesa' ? x.categoria : '',
+    x.t === 'Despesa' && x.cartao ? cartaoNome(x.cartao) : '',
     Number(x.valor).toFixed(2).replace('.', ',')]));
   const csv = '\uFEFF' + linhas.map(l => l.map(esc).join(';')).join('\r\n');
   const a = document.createElement('a');
