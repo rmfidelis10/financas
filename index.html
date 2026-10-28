@@ -93,6 +93,10 @@ a{color:var(--accent);font-weight:600}
 .modal .row .btn{margin-top:4px}
 .stats2{display:flex;flex-wrap:wrap;gap:12px 28px;margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
 .stats2 b{display:block;font-size:1.05rem}
+.abas{display:flex;gap:8px;flex-wrap:wrap;margin:-6px 0 16px}
+.abas .link.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+@media (prefers-color-scheme:dark){.abas .link.on{color:#06201d}}
+@media print{.abas{display:none!important}}
 </style>
 </head>
 <body>
@@ -132,10 +136,14 @@ a{color:var(--accent);font-weight:600}
           <label>Mês<input type="month" id="mes"></label>
           <label>Meta de gastos do mês (R$)<input id="meta" inputmode="decimal" placeholder="Ex.: 4.000,00"></label>
         </div>
-        <button class="link" id="verrel" type="button">Relatório</button>
         <button class="link" id="sair" type="button">Sair</button>
       </div>
     </div>
+    <nav class="abas" id="abas" aria-label="Seções">
+      <button class="link on" type="button" data-vista="painel">Painel</button>
+      <button class="link" type="button" data-vista="cartoes">Cartões</button>
+      <button class="link" type="button" data-vista="relatorio">Relatório</button>
+    </nav>
 
     <div id="vis-painel">
     <section class="panel" aria-live="polite">
@@ -177,8 +185,12 @@ a{color:var(--accent);font-weight:600}
 
     <section class="panel"><h2>Gastos por categoria</h2><div id="catlist"></div></section>
     <section class="panel"><h2>Despesas fixas do mês</h2><ul class="list" id="flist"></ul></section>
+    <section class="panel"><h2>Lançamentos do mês</h2><ul class="list edit" id="list"></ul></section>
+    </div>
+
+    <section id="vis-cartoes" hidden>
     <section class="panel"><h2>Meus cartões</h2>
-      <p class="sub" style="margin:-6px 0 8px">Gastos do mês por cartão, pela data da compra.</p>
+      <p class="sub" id="cart-sub" style="margin:-6px 0 8px"></p>
       <ul class="list" id="clist"></ul>
       <form id="fcart" class="row" style="margin:14px 0 0">
         <label>Nome do cartão<input name="nome" maxlength="30" placeholder="Ex.: Nubank" required></label>
@@ -186,8 +198,7 @@ a{color:var(--accent);font-weight:600}
         <button class="btn out full" type="submit">Adicionar cartão</button>
       </form>
     </section>
-    <section class="panel"><h2>Lançamentos do mês</h2><ul class="list edit" id="list"></ul></section>
-    </div>
+    </section>
 
     <section id="vis-rel" hidden>
       <div class="panel noprint">
@@ -270,7 +281,7 @@ function mostrar(logado){
 function irPara(v){ vistaAuth = v; aviso(''); mostrar(false); }
 function sair(m){
   token = null; try { sessionStorage.removeItem('fin_token'); localStorage.removeItem('fin_token'); } catch(e) {}
-  D = { meta:0, despesas:[], receitas:[] }; R = []; $('modal').hidden = true; setVista(false); mostrar(false); aviso(m || '', 'info');
+  D = { meta:0, despesas:[], receitas:[] }; R = []; $('modal').hidden = true; setVista('painel'); mostrar(false); aviso(m || '', 'info');
 }
 
 async function api(rota, corpo){
@@ -374,6 +385,7 @@ function render(){
   const semCartaoTopo = des.filter(x => !x.cartao);
   if (cartoesTopo.length && semCartaoTopo.length) bloco('Sem cartão', soma(semCartaoTopo));
   montaCartoes();
+  $('cart-sub').textContent = 'Gastos de ' + rotulo(m) + ' em cada cartão, pela data da compra. Para ver outro mês, troque em Painel.';
   const cl2 = $('clist'); cl2.innerHTML = '';
   const cs = D.cartoes || [];
   if (!cs.length) cl2.innerHTML = '<li class="empty">Nenhum cartão cadastrado. Adicione abaixo para marcar em cada despesa.</li>';
@@ -508,11 +520,12 @@ const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov'
 const rotulo = ym => MESES[Number(ym.slice(5,7))-1] + '/' + ym.slice(0,4);
 const dataBR = d => String(d).slice(8,10) + '/' + String(d).slice(5,7) + '/' + String(d).slice(0,4);
 const isoLocal = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
-function setVista(rel){
-  $('vis-painel').hidden = rel; $('vis-rel').hidden = !rel; $('ctrl-painel').hidden = rel;
-  $('verrel').textContent = rel ? 'Painel' : 'Relatório';
+function setVista(v){
+  $('vis-painel').hidden = v !== 'painel'; $('vis-cartoes').hidden = v !== 'cartoes'; $('vis-rel').hidden = v !== 'relatorio';
+  $('ctrl-painel').hidden = v !== 'painel';
+  document.querySelectorAll('#abas [data-vista]').forEach(bt => bt.classList.toggle('on', bt.dataset.vista === v));
 }
-$('verrel').onclick = () => { aviso(''); setVista($('vis-rel').hidden); };
+document.querySelectorAll('#abas [data-vista]').forEach(bt => { bt.onclick = () => { aviso(''); setVista(bt.dataset.vista); }; });
 
 function mesesEntre(a, b){
   const out = []; let [y, m] = a.split('-').map(Number); const [y2, m2] = b.split('-').map(Number);
