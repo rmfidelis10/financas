@@ -91,6 +91,8 @@ a{color:var(--accent);font-weight:600}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
 .modal form{width:100%;max-width:420px;max-height:92vh;overflow:auto;margin:0}
 .modal .row .btn{margin-top:4px}
+.stats2{display:flex;flex-wrap:wrap;gap:12px 28px;margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+.stats2 b{display:block;font-size:1.05rem}
 </style>
 </head>
 <body>
@@ -147,6 +149,7 @@ a{color:var(--accent);font-weight:600}
         <div><span class="sub">Gasto</span><b id="tdes">R$ 0,00</b></div>
         <div><span class="sub">Sobra do mês</span><b id="tsob">R$ 0,00</b></div>
       </div>
+      <div class="stats2" id="resumo-top"></div>
     </section>
 
     <div class="grid2">
@@ -362,6 +365,14 @@ function render(){
     d.children[0].children[1].textContent = brl(x.v) + ' · ' + Math.round(p*100) + '%';
     d.querySelector('i').style.width = p*100 + '%'; cl.appendChild(d); });
 
+  const rt = $('resumo-top'); rt.innerHTML = '';
+  const bloco = (rotulo, valor) => { const d = document.createElement('div');
+    d.innerHTML = '<span class="sub"></span><b></b>'; d.children[0].textContent = rotulo; d.children[1].textContent = brl(valor); rt.appendChild(d); };
+  bloco('Despesas fixas', soma(des.filter(x => x.fixa)));
+  const cartoesTopo = D.cartoes || [];
+  cartoesTopo.forEach(c => bloco(c.nome + ' · vence dia ' + pad(c.vencimento), soma(des.filter(x => x.cartao === c.id))));
+  const semCartaoTopo = des.filter(x => !x.cartao);
+  if (cartoesTopo.length && semCartaoTopo.length) bloco('Sem cartão', soma(semCartaoTopo));
   montaCartoes();
   const cl2 = $('clist'); cl2.innerHTML = '';
   const cs = D.cartoes || [];
