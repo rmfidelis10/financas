@@ -246,7 +246,7 @@ a{color:var(--accent);font-weight:600}
   <form class="panel" id="fedit">
     <h2 id="edit-titulo">Editar lançamento</h2>
     <div class="aviso" id="edit-erro" role="alert" hidden></div>
-    <p class="sub" id="edit-nota" hidden style="margin:-6px 0 10px">Isto altera só esta parcela.</p>
+    <label class="chk" id="edit-todas-l" hidden style="margin:-4px 0 12px"><input type="checkbox" id="edit-todas" checked> Aplicar a todas as parcelas (a data muda só nesta)</label>
     <div class="row"><label>Data<input type="date" name="data" required></label>
     <label>Valor (R$)<input name="valor" inputmode="decimal" required></label></div>
     <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" required></label></div>
@@ -460,7 +460,7 @@ function abrirEdicao(x){
   $('edit-despesa').hidden = x.t === 'receita';
   if (x.t === 'despesa') { $('ecat').value = x.categoria; $('ecart').value = x.cartao || ''; }
   $('edit-titulo').textContent = x.t === 'receita' ? 'Editar receita' : 'Editar despesa';
-  $('edit-nota').hidden = !x.parcela; $('edit-erro').hidden = true;
+  $('edit-todas-l').hidden = !x.parcela; $('edit-todas').checked = true; $('edit-erro').hidden = true;
   $('modal').hidden = false;
 }
 const fechaEdicao = () => { $('modal').hidden = true; editando = null; };
@@ -474,7 +474,14 @@ $('fedit').onsubmit = e => { e.preventDefault(); if (!editando) return;
   const corpo = { acao:'editar', tipo: editando.t, id: editando.id, data: f.get('data'), descricao: f.get('desc').trim(), valor };
   if (editando.t === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; }
   const bt = $('fedit').querySelector('button[type=submit]'); bt.disabled = true; $('edit-erro').hidden = true;
-  (async () => { try { await api('fin-api', corpo); fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar(); }
+  (async () => { try {
+      const todas = editando.grupo && !$('edit-todas-l').hidden && $('edit-todas').checked;
+      if (todas) {
+        await api('fin-api', { acao:'editar_grupo', grupo: editando.grupo, descricao: corpo.descricao, valor: corpo.valor,
+          categoria: corpo.categoria, cartao: corpo.cartao });
+        if (corpo.data !== editando.data) await api('fin-api', corpo);
+      } else await api('fin-api', corpo);
+      fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar(); }
     catch (err) { if (err.message) erro(err.message); } finally { bt.disabled = false; } })();
 };
 
