@@ -97,6 +97,10 @@ a{color:var(--accent);font-weight:600}
 .abas .link.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 @media (prefers-color-scheme:dark){.abas .link.on{color:#06201d}}
 @media print{.abas{display:none!important}}
+.fat{margin-bottom:18px}
+.fat-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:2px}
+.fat-h small{color:var(--mute);font-weight:400;font-size:.88rem}
+.fat-l li{grid-template-columns:44px 1fr auto}
 </style>
 </head>
 <body>
@@ -172,6 +176,8 @@ a{color:var(--accent);font-weight:600}
         <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" placeholder="Ex.: Compras da semana" required></label>
         <label class="full">Categoria<select name="cat" id="cats"></select></label>
         <label class="full">Cartão<select name="cartao" id="cartao"></select></label></div>
+        <div class="row" id="row-fat" hidden><label class="full">Vence em (opcional, para corrigir)<input type="month" name="fatura" id="fatura"></label>
+        <p class="sub full" id="fat-dica" style="margin:-4px 0 0"></p></div>
         <button class="btn out" type="submit">Adicionar despesa</button>
       </form>
       <form class="panel" id="fr">
@@ -191,12 +197,18 @@ a{color:var(--accent);font-weight:600}
     <section id="vis-cartoes" hidden>
     <section class="panel"><h2>Meus cartões</h2>
       <p class="sub" id="cart-sub" style="margin:-6px 0 8px"></p>
-      <ul class="list" id="clist"></ul>
+      <ul class="list edit" id="clist"></ul>
       <form id="fcart" class="row" style="margin:14px 0 0">
-        <label>Nome do cartão<input name="nome" maxlength="30" placeholder="Ex.: Nubank" required></label>
+        <label class="full">Nome do cartão<input name="nome" maxlength="30" placeholder="Ex.: Nubank" required></label>
+        <label>Fecha no dia<input name="fech" type="number" min="1" max="31" placeholder="Ex.: 25"></label>
         <label>Vence no dia<input name="venc" type="number" min="1" max="31" placeholder="Ex.: 5" required></label>
         <button class="btn out full" type="submit">Adicionar cartão</button>
       </form>
+    </section>
+    <section class="panel"><h2>Faturas</h2>
+      <p class="sub" style="margin:-6px 0 10px">O que vence em cada cartão no mês escolhido, pelo dia de fechamento ou pelo vencimento que você ajustou.</p>
+      <div class="row"><label class="full">Fatura que vence em<input type="month" id="fmes"></label></div>
+      <div id="fatlist"></div>
     </section>
     </section>
 
@@ -252,7 +264,20 @@ a{color:var(--accent);font-weight:600}
     <div class="row"><label class="full">Descrição<input name="desc" maxlength="120" required></label></div>
     <div class="row" id="edit-despesa"><label class="full">Categoria<select name="cat" id="ecat"></select></label>
     <label class="full">Cartão<select name="cartao" id="ecart"></select></label></div>
+    <div class="row" id="edit-fat" hidden><label class="full">Vence em (opcional, para corrigir)<input type="month" name="fatura" id="efatura"></label>
+    <p class="sub full" id="edit-dica" style="margin:-4px 0 0"></p></div>
     <div class="row"><button class="btn" type="submit">Salvar</button><button class="btn out" type="button" id="edit-cancelar">Cancelar</button></div>
+  </form>
+</div>
+
+<div class="modal" id="mcartao" hidden>
+  <form class="panel" id="fecart">
+    <h2>Editar cartão</h2>
+    <div class="aviso" id="ecart-erro" role="alert" hidden></div>
+    <div class="row"><label class="full">Nome<input name="nome" maxlength="30" required></label>
+    <label>Fecha no dia<input name="fech" type="number" min="1" max="31"></label>
+    <label>Vence no dia<input name="venc" type="number" min="1" max="31" required></label></div>
+    <div class="row"><button class="btn" type="submit">Salvar</button><button class="btn out" type="button" id="ecart-cancelar">Cancelar</button></div>
   </form>
 </div>
 <script>
@@ -281,7 +306,7 @@ function mostrar(logado){
 function irPara(v){ vistaAuth = v; aviso(''); mostrar(false); }
 function sair(m){
   token = null; try { sessionStorage.removeItem('fin_token'); localStorage.removeItem('fin_token'); } catch(e) {}
-  D = { meta:0, despesas:[], receitas:[] }; R = []; $('modal').hidden = true; setVista('painel'); mostrar(false); aviso(m || '', 'info');
+  D = { meta:0, despesas:[], receitas:[] }; R = []; $('modal').hidden = true; $('mcartao').hidden = true; setVista('painel'); mostrar(false); aviso(m || '', 'info');
 }
 
 async function api(rota, corpo){
@@ -342,6 +367,31 @@ async function carregar(){
   mostraMeta(); render();
 }
 const soma = a => a.reduce((t,x) => t + (Number(x.valor)||0), 0);
+const somaMes = (ym, n) => { const [y, m] = ym.split('-').map(Number); const t = (m - 1) + n; return (y + Math.floor(t / 12)) + '-' + pad((((t % 12) + 12) % 12) + 1); };
+const diasDoMes = ym => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+// Mês em que vence a fatura de uma compra: quem compra no dia do fechamento ou depois cai na fatura seguinte.
+function faturaMes(data, c){
+  const [y, m, d] = String(data).split('-').map(Number);
+  let fech = c.fechamento;
+  if (!fech) { fech = c.vencimento - 7; if (fech < 1) fech += 30; }
+  const ciclo = d >= fech ? somaMes(y + '-' + pad(m), 1) : y + '-' + pad(m);
+  return c.vencimento > fech ? ciclo : somaMes(ciclo, 1);
+}
+const cartaoPorId = id => (D.cartoes || []).find(c => c.id === id);
+function faturaEfetiva(x){ if (!x.cartao) return ''; if (x.fatura) return x.fatura; const c = cartaoPorId(x.cartao); return c ? faturaMes(x.data, c) : ''; }
+function dicaFatura(cartaoId, data, ajuste, el){
+  const c = cartaoPorId(cartaoId);
+  if (!c || !data) { el.textContent = ''; return; }
+  const efet = ajuste || faturaMes(data, c);
+  el.textContent = 'Fatura do ' + c.nome + ' vence em ' + pad(Math.min(c.vencimento, diasDoMes(efet))) + '/' + efet.slice(5, 7) + '/' + efet.slice(0, 4)
+    + (ajuste ? ' (ajustado por você)' : c.fechamento ? ' (calculado pelo fechamento)' : ' (estimado: informe o fechamento do cartão)');
+}
+function atualizaDicas(){
+  $('row-fat').hidden = !$('cartao').value || $('tipo').value === 'fixa';
+  dicaFatura($('cartao').value, $('fd').querySelector('[name=data]').value, $('fatura').value, $('fat-dica'));
+  $('edit-fat').hidden = !(editando && editando.t === 'despesa' && $('ecart').value);
+  dicaFatura($('ecart').value, $('fedit').querySelector('[name=data]').value, $('efatura').value, $('edit-dica'));
+}
 const cartaoNome = id => { const c = (D.cartoes || []).find(c => c.id === id); return c ? c.nome : 'cartão removido'; };
 function montaCartoes(){
   const cs = D.cartoes || [];
@@ -352,6 +402,7 @@ function montaCartoes(){
   preencher($('cartao'), [['', 'Sem cartão (dinheiro, Pix, débito)']]);
   preencher($('ecart'), [['', 'Sem cartão']]);
   preencher($('rcart'), [['', 'Todos os cartões'], ['__none', 'Sem cartão']]);
+  atualizaDicas();
 }
 const descExib = x => x.descricao + (x.parcela ? ' · ' + x.parcela : '') + (x.fixa ? ' · fixa' : '');
 
@@ -389,17 +440,18 @@ function render(){
   const cl2 = $('clist'); cl2.innerHTML = '';
   const cs = D.cartoes || [];
   if (!cs.length) cl2.innerHTML = '<li class="empty">Nenhum cartão cadastrado. Adicione abaixo para marcar em cada despesa.</li>';
-  const linhaCartao = (dia, nome, sub, total, id) => { const li = document.createElement('li');
-    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span class="neg"></span><button class="x" aria-label="Remover cartão">✕</button>';
+  const linhaCartao = (dia, nome, sub, total, id, cartao) => { const li = document.createElement('li');
+    li.innerHTML = '<span class="sub"></span><span><span class="d"></span><small></small></span><span class="neg"></span><button class="ed" aria-label="Editar cartão" title="Editar">✎</button><button class="x" aria-label="Remover cartão">✕</button>';
     li.children[0].textContent = dia; li.querySelector('.d').textContent = nome; li.querySelector('small').textContent = sub;
     li.children[2].textContent = brl(total);
-    const bt = li.querySelector('.x');
+    const bt = li.querySelector('.x'), be = li.querySelector('.ed');
+    if (!id) be.style.visibility = 'hidden'; else be.onclick = () => abrirCartao(cartao);
     if (!id) bt.style.visibility = 'hidden';
     else bt.onclick = () => { if (!confirm('Remover o cartão "' + nome + '"?\n\nOs lançamentos continuam, mas ficam sem o nome do cartão.')) return;
       seguro(async () => { await api('fin-api', { acao:'remover_cartao', id }); await carregar(); }); };
     cl2.appendChild(li); };
   cs.forEach(c => { const l = des.filter(x => x.cartao === c.id);
-    linhaCartao('dia ' + pad(c.vencimento), c.nome, l.length + (l.length === 1 ? ' lançamento' : ' lançamentos'), soma(l), c.id); });
+    linhaCartao('dia ' + pad(c.vencimento), c.nome, 'vence dia ' + pad(c.vencimento) + (c.fechamento ? ' · fecha dia ' + pad(c.fechamento) : ' · sem dia de fechamento') + ' · ' + l.length + (l.length === 1 ? ' lançamento' : ' lançamentos'), soma(l), c.id, c); });
   const semC = des.filter(x => !x.cartao);
   if (cs.length && semC.length) linhaCartao('', 'Sem cartão', semC.length + (semC.length === 1 ? ' lançamento' : ' lançamentos'), soma(semC), '');
 
@@ -426,7 +478,7 @@ function render(){
     const dt = String(x.data);
     li.children[0].textContent = dt.slice(8,10) + '/' + dt.slice(5,7);
     li.querySelector('.d').textContent = descExib(x);
-    li.querySelector('small').textContent = x.t === 'receita' ? 'Receita' : x.categoria + (x.cartao ? ' · ' + cartaoNome(x.cartao) : '');
+    li.querySelector('small').textContent = x.t === 'receita' ? 'Receita' : x.categoria + (x.cartao ? ' · ' + cartaoNome(x.cartao) + (faturaEfetiva(x) ? ' · fatura ' + rotulo(faturaEfetiva(x)) + (x.fatura ? '*' : '') : '') : '');
     const v = li.children[2]; v.textContent = (x.t === 'receita' ? '+ ' : '− ') + brl(x.valor); v.className = x.t === 'receita' ? 'pos' : 'neg';
     const bx = li.querySelector('.x');
     const be = li.querySelector('.ed');
@@ -458,10 +510,10 @@ function abrirEdicao(x){
   f.querySelector('[name=valor]').value = String(x.valor).replace('.', ',');
   f.querySelector('[name=desc]').value = x.descricao;
   $('edit-despesa').hidden = x.t === 'receita';
-  if (x.t === 'despesa') { $('ecat').value = x.categoria; $('ecart').value = x.cartao || ''; }
+  if (x.t === 'despesa') { $('ecat').value = x.categoria; $('ecart').value = x.cartao || ''; $('efatura').value = x.fatura || ''; }
   $('edit-titulo').textContent = x.t === 'receita' ? 'Editar receita' : 'Editar despesa';
   $('edit-todas-l').hidden = !x.parcela; $('edit-todas').checked = true; $('edit-erro').hidden = true;
-  $('modal').hidden = false;
+  $('modal').hidden = false; atualizaDicas();
 }
 const fechaEdicao = () => { $('modal').hidden = true; editando = null; };
 $('edit-cancelar').onclick = fechaEdicao;
@@ -472,29 +524,91 @@ $('fedit').onsubmit = e => { e.preventDefault(); if (!editando) return;
   const erro = m => { $('edit-erro').textContent = m; $('edit-erro').hidden = false; };
   if (isNaN(valor) || valor <= 0) { erro('Digite um valor maior que zero.'); return; }
   const corpo = { acao:'editar', tipo: editando.t, id: editando.id, data: f.get('data'), descricao: f.get('desc').trim(), valor };
-  if (editando.t === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; }
+  if (editando.t === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; corpo.fatura = corpo.cartao ? (f.get('fatura') || '') : ''; }
   const bt = $('fedit').querySelector('button[type=submit]'); bt.disabled = true; $('edit-erro').hidden = true;
   (async () => { try {
       const todas = editando.grupo && !$('edit-todas-l').hidden && $('edit-todas').checked;
       if (todas) {
         await api('fin-api', { acao:'editar_grupo', grupo: editando.grupo, descricao: corpo.descricao, valor: corpo.valor,
           categoria: corpo.categoria, cartao: corpo.cartao });
-        if (corpo.data !== editando.data) await api('fin-api', corpo);
+        if (corpo.data !== editando.data || (corpo.fatura || '') !== (editando.fatura || '')) await api('fin-api', corpo);
       } else await api('fin-api', corpo);
       fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar(); }
     catch (err) { if (err.message) erro(err.message); } finally { bt.disabled = false; } })();
 };
 
 $('fcart').onsubmit = e => { e.preventDefault(); const f = new FormData($('fcart'));
-  const venc = Number(f.get('venc'));
+  const venc = Number(f.get('venc')), fech = f.get('fech') === '' ? 0 : Number(f.get('fech'));
   if (!Number.isInteger(venc) || venc < 1 || venc > 31) { aviso('Digite um dia de vencimento de 1 a 31.'); return; }
-  seguro(async () => { await api('fin-api', { acao:'adicionar_cartao', nome: f.get('nome').trim(), vencimento: venc });
-    $('fcart').reset(); await carregar(); }); };
+  if (!Number.isInteger(fech) || fech < 0 || fech > 31) { aviso('O dia de fechamento deve ser de 1 a 31.'); return; }
+  seguro(async () => { await api('fin-api', { acao:'adicionar_cartao', nome: f.get('nome').trim(), vencimento: venc, fechamento: fech });
+    $('fcart').reset(); await carregar(); await carregarFaturas(); }); };
+
+let cartaoEd = null;
+function abrirCartao(c){
+  cartaoEd = c; const f = $('fecart');
+  f.querySelector('[name=nome]').value = c.nome; f.querySelector('[name=fech]').value = c.fechamento || '';
+  f.querySelector('[name=venc]').value = c.vencimento; $('ecart-erro').hidden = true; $('mcartao').hidden = false;
+}
+const fechaCartao = () => { $('mcartao').hidden = true; cartaoEd = null; };
+$('ecart-cancelar').onclick = fechaCartao;
+$('mcartao').onclick = e => { if (e.target === $('mcartao')) fechaCartao(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('mcartao').hidden) fechaCartao(); });
+$('fecart').onsubmit = e => { e.preventDefault(); if (!cartaoEd) return;
+  const f = new FormData($('fecart')); const erro = m => { $('ecart-erro').textContent = m; $('ecart-erro').hidden = false; };
+  const venc = Number(f.get('venc')), fech = f.get('fech') === '' ? 0 : Number(f.get('fech'));
+  if (!Number.isInteger(venc) || venc < 1 || venc > 31) { erro('Digite um dia de vencimento de 1 a 31.'); return; }
+  if (!Number.isInteger(fech) || fech < 0 || fech > 31) { erro('O dia de fechamento deve ser de 1 a 31.'); return; }
+  (async () => { try { await api('fin-api', { acao:'editar_cartao', id: cartaoEd.id, nome: f.get('nome').trim(), vencimento: venc, fechamento: fech });
+      fechaCartao(); await carregar(); await carregarFaturas(); }
+    catch (err) { if (err.message) erro(err.message); } })();
+};
+
+// Faturas: o que vence em cada cartão no mês escolhido
+async function carregarFaturas(){
+  const mes = $('fmes').value; if (!mes) return;
+  const box = $('fatlist');
+  await seguro(async () => {
+    try {
+      box.textContent = 'Carregando...';
+      const itens = [];
+      for (let i = 3; i >= 0; i--) { const d = await api('fin-api', { acao:'listar', mes: somaMes(mes, -i) }); (d.despesas || []).forEach(x => itens.push(x)); }
+      box.innerHTML = '';
+      const cs = D.cartoes || [];
+      if (!cs.length) { box.innerHTML = '<p class="empty">Cadastre um cartão para ver as faturas.</p>'; return; }
+      cs.forEach(c => {
+        const linhas = itens.filter(x => x.cartao === c.id && faturaEfetiva(x) === mes).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+        const bloco = document.createElement('div'); bloco.className = 'fat';
+        bloco.innerHTML = '<div class="fat-h"><span><b class="n"></b><small class="v"></small></span><b class="t"></b></div><ul class="list fat-l"></ul>';
+        bloco.querySelector('.n').textContent = c.nome;
+        bloco.querySelector('.v').textContent = ' · vence ' + dataBR(mes + '-' + pad(Math.min(c.vencimento, diasDoMes(mes))));
+        bloco.querySelector('.t').textContent = brl(soma(linhas));
+        const ul = bloco.querySelector('ul');
+        if (!linhas.length) ul.innerHTML = '<li class="empty">Nenhuma compra nesta fatura.</li>';
+        linhas.forEach(x => { const li = document.createElement('li');
+          li.innerHTML = '<span class="sub"></span><span class="d"></span><span class="neg"></span>';
+          li.children[0].textContent = dataBR(x.data).slice(0, 5); li.children[1].textContent = descExib(x) + (x.fatura ? ' *' : '');
+          li.children[2].textContent = brl(x.valor); ul.appendChild(li); });
+        if (!c.fechamento) { const av = document.createElement('p'); av.className = 'sub';
+          av.textContent = 'Sem dia de fechamento: o app estima 7 dias antes do vencimento. Toque em ✎ no cartão para informar o dia certo.'; bloco.appendChild(av); }
+        box.appendChild(bloco);
+      });
+      const nota = document.createElement('p'); nota.className = 'sub';
+      nota.textContent = '* vencimento ajustado por você. Entram compras feitas até 3 meses antes do mês da fatura.'; box.appendChild(nota);
+    } catch (e) { box.textContent = ''; throw e; }
+  });
+}
+$('fmes').value = hoje().slice(0, 7);
+$('fmes').onchange = carregarFaturas;
 function ajustaTipo(){ const t = $('tipo').value;
   $('extra-parc').hidden = t !== 'parcelada'; $('extra-fixa').hidden = t !== 'fixa';
   $('t-data').textContent = t === 'parcelada' ? 'Data da 1ª parcela' : t === 'fixa' ? 'Primeira cobrança' : 'Data';
   $('t-valor').textContent = t === 'parcelada' ? 'Valor da parcela (R$)' : 'Valor (R$)'; }
-$('tipo').onchange = ajustaTipo;
+$('tipo').onchange = () => { ajustaTipo(); atualizaDicas(); };
+['cartao', 'fatura'].forEach(id => $(id).addEventListener('input', atualizaDicas));
+$('fd').querySelector('[name=data]').addEventListener('input', atualizaDicas);
+['ecart', 'efatura'].forEach(id => $(id).addEventListener('input', atualizaDicas));
+$('fedit').querySelector('[name=data]').addEventListener('input', atualizaDicas);
 $('mes').value = hoje().slice(0,7);
 document.querySelectorAll('input[type=date]').forEach(i => i.value = hoje());
 $('mes').onchange = () => seguro(carregar);
@@ -507,7 +621,7 @@ function envia(form, tipo){ form.onsubmit = e => { e.preventDefault();
   if (isNaN(valor) || valor <= 0) { aviso('Digite um valor maior que zero.'); return; }
   const corpo = { acao: tipo === 'despesa' ? 'adicionar_despesa' : 'adicionar_receita',
     data: f.get('data'), descricao: f.get('desc').trim(), valor };
-  if (tipo === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; const t = f.get('tipo');
+  if (tipo === 'despesa') { corpo.categoria = f.get('cat'); corpo.cartao = f.get('cartao') || ''; corpo.fatura = corpo.cartao ? (f.get('fatura') || '') : ''; const t = f.get('tipo');
     if (t === 'parcelada') { corpo.acao = 'adicionar_parcelada'; corpo.parcelas = Number(f.get('parcelas')); }
     else if (t === 'fixa') { corpo.acao = 'adicionar_fixa'; corpo.dia = Number(corpo.data.slice(8, 10));
       corpo.inicio = corpo.data.slice(0, 7); corpo.fim = f.get('fim') || ''; } }
@@ -516,6 +630,7 @@ function envia(form, tipo){ form.onsubmit = e => { e.preventDefault();
     await api('fin-api', corpo);
     $('mes').value = corpo.data.slice(0,7);
     form.querySelector('[name=valor]').value = ''; form.querySelector('[name=desc]').value = '';
+    const ff = form.querySelector('[name=fatura]'); if (ff) ff.value = ''; atualizaDicas();
     await carregar();
   }).finally(() => { btn.disabled = false; }); }; }
 envia($('fd'), 'despesa'); envia($('fr'), 'receita');
@@ -531,6 +646,7 @@ function setVista(v){
   $('vis-painel').hidden = v !== 'painel'; $('vis-cartoes').hidden = v !== 'cartoes'; $('vis-rel').hidden = v !== 'relatorio';
   $('ctrl-painel').hidden = v !== 'painel';
   document.querySelectorAll('#abas [data-vista]').forEach(bt => bt.classList.toggle('on', bt.dataset.vista === v));
+  if (v === 'cartoes' && token) carregarFaturas();
 }
 document.querySelectorAll('#abas [data-vista]').forEach(bt => { bt.onclick = () => { aviso(''); setVista(bt.dataset.vista); }; });
 
