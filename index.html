@@ -163,6 +163,7 @@ a{color:var(--accent);font-weight:600}
         <div><span class="sub">Sobra do mês</span><b id="tsob">R$ 0,00</b></div>
       </div>
       <div class="stats2" id="resumo-top"></div>
+      <div class="stats2" id="resumo-prox" style="margin-top:10px;border-top:0;padding-top:0"></div>
     </section>
 
     <div class="grid2">
@@ -310,7 +311,14 @@ function sair(m){
   D = { meta:0, despesas:[], receitas:[] }; R = []; $('modal').hidden = true; $('mcartao').hidden = true; setVista('painel'); mostrar(false); aviso(m || '', 'info');
 }
 
+const CACHE = {};
+async function listarIntervalo(de, ate){
+  const k = de + '|' + ate, agora = Date.now();
+  if (!CACHE[k] || agora - CACHE[k].t > 60000) CACHE[k] = { t: agora, v: await api('fin-api', { acao:'listar_intervalo', de, ate }) };
+  return CACHE[k].v;
+}
 async function api(rota, corpo){
+  if (rota === 'fin-api' && corpo.acao !== 'listar' && corpo.acao !== 'listar_intervalo') Object.keys(CACHE).forEach(k => delete CACHE[k]);
   let r;
   try {
     r = await fetch(API + '/' + rota, { method:'POST',
@@ -366,6 +374,7 @@ async function carregar(){
   const d = await api('fin-api', { acao:'listar', mes: $('mes').value });
   D = { meta: Number(d.meta)||0, despesas: d.despesas||[], receitas: d.receitas||[], fixas: d.fixas||[], cartoes: d.cartoes||[] };
   mostraMeta(); render();
+  carregarProximas();
 }
 const soma = a => a.reduce((t,x) => t + (Number(x.valor)||0), 0);
 const somaMes = (ym, n) => { const [y, m] = ym.split('-').map(Number); const t = (m - 1) + n; return (y + Math.floor(t / 12)) + '-' + pad((((t % 12) + 12) % 12) + 1); };
@@ -565,6 +574,38 @@ $('fecart').onsubmit = e => { e.preventDefault(); if (!cartaoEd) return;
     catch (err) { if (err.message) erro(err.message); } })();
 };
 
+// Próximas faturas: quanto vence no próximo vencimento de cada cartão
+let proxSeq = 0;
+async function carregarProximas(){
+  const alvo = $('resumo-prox'), seq = ++proxSeq;
+  alvo.innerHTML = '';
+  const cs = D.cartoes || [];
+  if (!cs.length || !token) return;
+  const hojeS = hoje(), mesAtual = hojeS.slice(0, 7);
+  const venc = cs.map(c => {
+    const esteMes = mesAtual + '-' + pad(Math.min(c.vencimento, diasDoMes(mesAtual)));
+    const mesFat = esteMes >= hojeS ? mesAtual : somaMes(mesAtual, 1);
+    return { id: c.id, mesFat, data: mesFat + '-' + pad(Math.min(c.vencimento, diasDoMes(mesFat))) };
+  });
+  const meses = venc.map(v => v.mesFat).sort();
+  const legenda = document.createElement('div'); legenda.className = 'sub'; legenda.style.width = '100%';
+  legenda.textContent = 'Calculando as próximas faturas...'; alvo.appendChild(legenda);
+  try {
+    const dados = await listarIntervalo(somaMes(meses[0], -3), meses[meses.length - 1]);
+    if (seq !== proxSeq) return;
+    if (dados.cartoes) D.cartoes = dados.cartoes;
+    const itens = dados.despesas || [];
+    legenda.textContent = 'Próximas faturas: o que você vai pagar em cada vencimento';
+    cs.map(c => { const v = venc.find(v => v.id === c.id);
+        return { c, v, total: soma(itens.filter(x => x.cartao === c.id && faturaEfetiva(x) === v.mesFat)) }; })
+      .sort((a, b) => a.v.data.localeCompare(b.v.data))
+      .forEach(({ c, v, total }) => { const d = document.createElement('div');
+        d.innerHTML = '<span class="sub"></span><b></b>';
+        d.children[0].textContent = c.nome + ' · vence ' + dataBR(v.data).slice(0, 5) + (c.fechamento ? '' : ' (estimado)');
+        d.children[1].textContent = brl(total); alvo.appendChild(d); });
+  } catch (e) { if (seq === proxSeq) legenda.textContent = 'Não foi possível calcular as próximas faturas agora.'; }
+}
+
 // Faturas: o que vence em cada cartão no mês escolhido
 async function carregarFaturas(){
   const mes = $('fmes').value; if (!mes) return;
@@ -572,9 +613,9 @@ async function carregarFaturas(){
   await seguro(async () => {
     try {
       box.textContent = 'Carregando...';
-      const itens = []; let ultima = null;
-      for (let i = 3; i >= 0; i--) { const d = await api('fin-api', { acao:'listar', mes: somaMes(mes, -i) }); ultima = d; (d.despesas || []).forEach(x => itens.push(x)); }
-      if (ultima && ultima.cartoes) D.cartoes = ultima.cartoes;
+      const dados = await listarIntervalo(somaMes(mes, -3), mes);
+      const itens = dados.despesas || [];
+      if (dados.cartoes) D.cartoes = dados.cartoes;
       box.innerHTML = '';
       const cs = D.cartoes || [];
       if (!cs.length) { box.innerHTML = '<p class="empty">Cadastre um cartão para ver as faturas.</p>'; return; }
