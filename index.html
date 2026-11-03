@@ -101,6 +101,7 @@ a{color:var(--accent);font-weight:600}
 .fat-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:2px}
 .fat-h small{color:var(--mute);font-weight:400;font-size:.88rem}
 .fat-l li{grid-template-columns:44px 1fr auto}
+.fat-l.edit li{grid-template-columns:44px 1fr auto 32px}
 </style>
 </head>
 <body>
@@ -533,7 +534,7 @@ $('fedit').onsubmit = e => { e.preventDefault(); if (!editando) return;
           categoria: corpo.categoria, cartao: corpo.cartao });
         if (corpo.data !== editando.data || (corpo.fatura || '') !== (editando.fatura || '')) await api('fin-api', corpo);
       } else await api('fin-api', corpo);
-      fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar(); }
+      fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar(); if (!$('vis-cartoes').hidden) await carregarFaturas(); }
     catch (err) { if (err.message) erro(err.message); } finally { bt.disabled = false; } })();
 };
 
@@ -571,8 +572,9 @@ async function carregarFaturas(){
   await seguro(async () => {
     try {
       box.textContent = 'Carregando...';
-      const itens = [];
-      for (let i = 3; i >= 0; i--) { const d = await api('fin-api', { acao:'listar', mes: somaMes(mes, -i) }); (d.despesas || []).forEach(x => itens.push(x)); }
+      const itens = []; let ultima = null;
+      for (let i = 3; i >= 0; i--) { const d = await api('fin-api', { acao:'listar', mes: somaMes(mes, -i) }); ultima = d; (d.despesas || []).forEach(x => itens.push(x)); }
+      if (ultima && ultima.cartoes) D.cartoes = ultima.cartoes;
       box.innerHTML = '';
       const cs = D.cartoes || [];
       if (!cs.length) { box.innerHTML = '<p class="empty">Cadastre um cartão para ver as faturas.</p>'; return; }
@@ -593,6 +595,24 @@ async function carregarFaturas(){
           av.textContent = 'Sem dia de fechamento: o app estima 7 dias antes do vencimento. Toque em ✎ no cartão para informar o dia certo.'; bloco.appendChild(av); }
         box.appendChild(bloco);
       });
+      const janela = [somaMes(mes, -2), somaMes(mes, -1)];
+      const sem = itens.filter(x => !x.cartao && !x.fixa && janela.includes(String(x.data).slice(0, 7)))
+        .sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      if (sem.length) {
+        const bs = document.createElement('div'); bs.className = 'fat';
+        bs.innerHTML = '<div class="fat-h"><span><b>Sem cartão</b><small class="v"></small></span><b class="t"></b></div><ul class="list fat-l edit"></ul><p class="sub"></p>';
+        bs.querySelector('.v').textContent = ' · compras de ' + rotulo(janela[0]) + ' e ' + rotulo(janela[1]) + ' que não estão em nenhum cartão';
+        bs.querySelector('.t').textContent = brl(soma(sem));
+        bs.querySelector('p').textContent = 'Estas compras não entram em nenhuma fatura. Se alguma foi no cartão, toque em ✎ e escolha o cartão.';
+        const ulS = bs.querySelector('ul');
+        sem.forEach(x => { const li = document.createElement('li');
+          li.innerHTML = '<span class="sub"></span><span class="d"></span><span class="neg"></span><button class="ed" aria-label="Editar lançamento" title="Editar">✎</button>';
+          li.children[0].textContent = dataBR(x.data).slice(0, 5); li.children[1].textContent = descExib(x);
+          li.children[2].textContent = brl(x.valor);
+          li.querySelector('.ed').onclick = () => abrirEdicao(Object.assign({ t: 'despesa' }, x));
+          ulS.appendChild(li); });
+        box.appendChild(bs);
+      }
       const nota = document.createElement('p'); nota.className = 'sub';
       nota.textContent = '* vencimento ajustado por você. Entram compras feitas até 3 meses antes do mês da fatura.'; box.appendChild(nota);
     } catch (e) { box.textContent = ''; throw e; }
