@@ -102,6 +102,21 @@ a{color:var(--accent);font-weight:600}
 .fat-h small{color:var(--mute);font-weight:400;font-size:.88rem}
 .fat-l li{grid-template-columns:44px 1fr auto}
 .fat-l.edit li{grid-template-columns:44px 1fr auto 32px}
+.abas.sub{margin:0 0 14px}
+.mes{border-top:1px solid var(--line)}
+.mes:first-of-type{border-top:0}
+.mes summary{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:pointer;padding:12px 0;list-style:none}
+.mes summary::-webkit-details-marker{display:none}
+.mes summary::before{content:'▸';color:var(--mute);margin-right:8px}
+.mes[open] > summary::before{content:'▾'}
+.mes .m{flex:1}
+.mes .m small{display:block;color:var(--mute);font-size:.82rem}
+.mes .t{text-align:right}
+.mes .t small{display:block;color:var(--mute);font-size:.8rem;font-weight:400}
+.mes.zero .t b{color:var(--mute);font-weight:600}
+.mes .fat-l{margin:0 0 10px 22px}
+.resumo-mensal{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:2px}
+@media print{.mes .fat-l{display:block}}
 </style>
 </head>
 <body>
@@ -197,6 +212,12 @@ a{color:var(--accent);font-weight:600}
     </div>
 
     <section id="vis-cartoes" hidden>
+    <nav class="abas sub" id="subabas" aria-label="Cartões">
+      <button class="link on" type="button" data-sub="cadastro">Meus cartões</button>
+      <button class="link" type="button" data-sub="faturas">Faturas do mês</button>
+      <button class="link" type="button" data-sub="mensal">Mês a mês</button>
+    </nav>
+    <div id="sub-cadastro">
     <section class="panel"><h2>Meus cartões</h2>
       <p class="sub" id="cart-sub" style="margin:-6px 0 8px"></p>
       <ul class="list edit" id="clist"></ul>
@@ -207,11 +228,21 @@ a{color:var(--accent);font-weight:600}
         <button class="btn out full" type="submit">Adicionar cartão</button>
       </form>
     </section>
+    </div>
+    <div id="sub-faturas" hidden>
     <section class="panel"><h2>Faturas</h2>
       <p class="sub" style="margin:-6px 0 10px">O que vence em cada cartão no mês escolhido, pelo dia de fechamento ou pelo vencimento que você ajustou.</p>
       <div class="row"><label class="full">Fatura que vence em<input type="month" id="fmes"></label></div>
       <div id="fatlist"></div>
     </section>
+    </div>
+    <div id="sub-mensal" hidden>
+    <section class="panel"><h2>Mês a mês por cartão</h2>
+      <p class="sub" style="margin:-6px 0 10px">Escolha um cartão para ver quanto já está em cada fatura, a partir do mês atual. Toque em um mês para ver o que tem dentro.</p>
+      <div class="row"><label class="full">Cartão<select id="mcart"></select></label></div>
+      <div id="mlist"></div>
+    </section>
+    </div>
     </section>
 
     <section id="vis-rel" hidden>
@@ -412,6 +443,7 @@ function montaCartoes(){
   preencher($('cartao'), [['', 'Sem cartão (dinheiro, Pix, débito)']]);
   preencher($('ecart'), [['', 'Sem cartão']]);
   preencher($('rcart'), [['', 'Todos os cartões'], ['__none', 'Sem cartão']]);
+  preencher($('mcart'), []);
   atualizaDicas();
 }
 const descExib = x => x.descricao + (x.parcela ? ' · ' + x.parcela : '') + (x.fixa ? ' · fixa' : '');
@@ -606,6 +638,68 @@ async function carregarProximas(){
   } catch (e) { if (seq === proxSeq) legenda.textContent = 'Não foi possível calcular as próximas faturas agora.'; }
 }
 
+// Consulta em blocos de até 12 meses (limite da API) e junta o resultado
+async function listarFaixa(de, ate){
+  const despesas = []; let cartoes = null, ini = de;
+  while (ini <= ate) {
+    const fimBloco = somaMes(ini, 11) < ate ? somaMes(ini, 11) : ate;
+    const d = await listarIntervalo(ini, fimBloco);
+    (d.despesas || []).forEach(x => despesas.push(x));
+    if (d.cartoes) cartoes = d.cartoes;
+    ini = somaMes(fimBloco, 1);
+  }
+  return { despesas, cartoes };
+}
+
+// Mês a mês: o que há em cada fatura de um cartão, pelos próximos 12 meses
+async function carregarMensal(){
+  const box = $('mlist'), cs = D.cartoes || [];
+  if (!cs.length) { box.innerHTML = '<p class="empty">Cadastre um cartão para ver mês a mês.</p>'; return; }
+  const id = $('mcart').value || cs[0].id;
+  await seguro(async () => {
+    try {
+      box.textContent = 'Carregando...';
+      const hojeS = hoje(), ini = hojeS.slice(0, 7);
+      const dados = await listarFaixa(somaMes(ini, -3), somaMes(ini, 11));
+      if (dados.cartoes) D.cartoes = dados.cartoes;
+      const c = cartaoPorId(id); if (!c) { box.innerHTML = ''; return; }
+      const porFatura = {};
+      dados.despesas.filter(x => x.cartao === id).forEach(x => { const f = faturaEfetiva(x); if (f) (porFatura[f] = porFatura[f] || []).push(x); });
+      box.innerHTML = '';
+      let geral = 0;
+      const lista = document.createElement('div');
+      for (let i = 0; i < 12; i++) {
+        const m = somaMes(ini, i), linhas = (porFatura[m] || []).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+        const total = soma(linhas); geral += total;
+        const dataVenc = m + '-' + pad(Math.min(c.vencimento, diasDoMes(m)));
+        const det = document.createElement('details'); det.className = 'mes' + (linhas.length ? '' : ' zero');
+        det.innerHTML = '<summary><span class="m"><b></b><small></small></span><span class="t"><b></b><small></small></span></summary><ul class="list fat-l"></ul>';
+        det.querySelector('.m b').textContent = rotulo(m);
+        det.querySelector('.m small').textContent = 'vence ' + dataBR(dataVenc) + (dataVenc < hojeS ? ' · já venceu' : '');
+        det.querySelector('.t b').textContent = brl(total);
+        det.querySelector('.t small').textContent = linhas.length ? linhas.length + (linhas.length === 1 ? ' lançamento' : ' lançamentos') : 'nada ainda';
+        const ul = det.querySelector('ul');
+        if (!linhas.length) ul.innerHTML = '<li class="empty">Nenhum lançamento nesta fatura até agora.</li>';
+        linhas.forEach(x => { const li = document.createElement('li');
+          li.innerHTML = '<span class="sub"></span><span class="d"></span><span class="neg"></span>';
+          li.children[0].textContent = dataBR(x.data).slice(0, 5); li.children[1].textContent = descExib(x) + (x.fatura ? ' *' : '');
+          li.children[2].textContent = brl(x.valor); ul.appendChild(li); });
+        lista.appendChild(det);
+      }
+      const topo = document.createElement('div'); topo.className = 'resumo-mensal';
+      topo.innerHTML = '<span><b></b><small class="sub"></small></span><b class="g"></b>';
+      topo.querySelector('b').textContent = c.nome;
+      topo.querySelector('small').textContent = ' · vence todo dia ' + pad(c.vencimento) + (c.fechamento ? ' · fecha dia ' + pad(c.fechamento) : ' · fechamento estimado');
+      topo.querySelector('.g').textContent = brl(geral);
+      box.appendChild(topo); box.appendChild(lista);
+      const nota = document.createElement('p'); nota.className = 'sub';
+      nota.textContent = 'O total à direita é tudo o que já está lançado nos próximos 12 meses neste cartão. * vencimento ajustado por você.';
+      box.appendChild(nota);
+    } catch (e) { box.textContent = ''; throw e; }
+  });
+}
+$('mcart').onchange = carregarMensal;
+
 // Faturas: o que vence em cada cartão no mês escolhido
 async function carregarFaturas(){
   const mes = $('fmes').value; if (!mes) return;
@@ -703,11 +797,21 @@ const MESES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov'
 const rotulo = ym => MESES[Number(ym.slice(5,7))-1] + '/' + ym.slice(0,4);
 const dataBR = d => String(d).slice(8,10) + '/' + String(d).slice(5,7) + '/' + String(d).slice(0,4);
 const isoLocal = d => d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+const SUB = { atual: 'cadastro' };
+function setSub(s){
+  SUB.atual = s;
+  ['cadastro', 'faturas', 'mensal'].forEach(n => { $('sub-' + n).hidden = n !== s; });
+  document.querySelectorAll('#subabas [data-sub]').forEach(bt => bt.classList.toggle('on', bt.dataset.sub === s));
+  if (!token) return;
+  if (s === 'faturas') carregarFaturas();
+  if (s === 'mensal') carregarMensal();
+}
+document.querySelectorAll('#subabas [data-sub]').forEach(bt => { bt.onclick = () => { aviso(''); setSub(bt.dataset.sub); }; });
 function setVista(v){
   $('vis-painel').hidden = v !== 'painel'; $('vis-cartoes').hidden = v !== 'cartoes'; $('vis-rel').hidden = v !== 'relatorio';
   $('ctrl-painel').hidden = v !== 'painel';
   document.querySelectorAll('#abas [data-vista]').forEach(bt => bt.classList.toggle('on', bt.dataset.vista === v));
-  if (v === 'cartoes' && token) carregarFaturas();
+  if (v === 'cartoes') setSub(SUB.atual);
 }
 document.querySelectorAll('#abas [data-vista]').forEach(bt => { bt.onclick = () => { aviso(''); setVista(bt.dataset.vista); }; });
 
