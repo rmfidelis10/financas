@@ -172,8 +172,7 @@ a{color:var(--accent);font-weight:600}
         <div class="sub" id="gp"></div>
       </div>
       <div class="track"><div class="fill" id="fill"></div><div class="tick" title="80% da meta"></div></div>
-      <div class="stats" style="grid-template-columns:repeat(2,1fr)">
-        <div><span class="sub">Recebido</span><b id="trec">R$ 0,00</b></div>
+      <div class="stats" style="grid-template-columns:1fr">
         <div><span class="sub">Despesas fixas</span><b id="tfix">R$ 0,00</b></div>
       </div>
       <div class="stats2" id="resumo-prox"></div>
@@ -450,7 +449,7 @@ function render(){
   const m = $('mes').value, des = D.despesas, rec = D.receitas;
   const meta = D.meta, gasto = soma(des), recebido = soma(rec), saldo = meta - gasto;
   const pct = meta > 0 ? gasto/meta : 0;
-  $('trec').textContent = brl(recebido); $('tfix').textContent = brl(soma(des.filter(x => x.fixa)));
+  $('tfix').textContent = brl(soma(des.filter(x => x.fixa)));
   if (meta <= 0){ $('gl').textContent = 'Defina a meta do mês'; $('saldo').textContent = brl(0); $('gp').textContent = ''; }
   else if (saldo >= 0){ $('gl').textContent = 'Ainda pode gastar'; $('saldo').textContent = brl(saldo); $('gp').textContent = Math.round(pct*100) + '% da meta usada'; }
   else { $('gl').textContent = 'Passou da meta em'; $('saldo').textContent = brl(-saldo); $('gp').textContent = Math.round(pct*100) + '% da meta usada'; }
