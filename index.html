@@ -172,13 +172,11 @@ a{color:var(--accent);font-weight:600}
         <div class="sub" id="gp"></div>
       </div>
       <div class="track"><div class="fill" id="fill"></div><div class="tick" title="80% da meta"></div></div>
-      <div class="stats">
+      <div class="stats" style="grid-template-columns:repeat(2,1fr)">
         <div><span class="sub">Recebido</span><b id="trec">R$ 0,00</b></div>
-        <div><span class="sub">Gasto</span><b id="tdes">R$ 0,00</b></div>
-        <div><span class="sub">Sobra do mês</span><b id="tsob">R$ 0,00</b></div>
+        <div><span class="sub">Despesas fixas</span><b id="tfix">R$ 0,00</b></div>
       </div>
-      <div class="stats2" id="resumo-top"></div>
-      <div class="stats2" id="resumo-prox" style="margin-top:10px;border-top:0;padding-top:0"></div>
+      <div class="stats2" id="resumo-prox"></div>
     </section>
 
     <div class="grid2">
@@ -452,7 +450,7 @@ function render(){
   const m = $('mes').value, des = D.despesas, rec = D.receitas;
   const meta = D.meta, gasto = soma(des), recebido = soma(rec), saldo = meta - gasto;
   const pct = meta > 0 ? gasto/meta : 0;
-  $('trec').textContent = brl(recebido); $('tdes').textContent = brl(gasto); $('tsob').textContent = brl(recebido-gasto);
+  $('trec').textContent = brl(recebido); $('tfix').textContent = brl(soma(des.filter(x => x.fixa)));
   if (meta <= 0){ $('gl').textContent = 'Defina a meta do mês'; $('saldo').textContent = brl(0); $('gp').textContent = ''; }
   else if (saldo >= 0){ $('gl').textContent = 'Ainda pode gastar'; $('saldo').textContent = brl(saldo); $('gp').textContent = Math.round(pct*100) + '% da meta usada'; }
   else { $('gl').textContent = 'Passou da meta em'; $('saldo').textContent = brl(-saldo); $('gp').textContent = Math.round(pct*100) + '% da meta usada'; }
@@ -469,14 +467,6 @@ function render(){
     d.children[0].children[1].textContent = brl(x.v) + ' · ' + Math.round(p*100) + '%';
     d.querySelector('i').style.width = p*100 + '%'; cl.appendChild(d); });
 
-  const rt = $('resumo-top'); rt.innerHTML = '';
-  const bloco = (rotulo, valor) => { const d = document.createElement('div');
-    d.innerHTML = '<span class="sub"></span><b></b>'; d.children[0].textContent = rotulo; d.children[1].textContent = brl(valor); rt.appendChild(d); };
-  bloco('Despesas fixas', soma(des.filter(x => x.fixa)));
-  const cartoesTopo = D.cartoes || [];
-  cartoesTopo.forEach(c => bloco(c.nome + ' · vence dia ' + pad(c.vencimento), soma(des.filter(x => x.cartao === c.id))));
-  const semCartaoTopo = des.filter(x => !x.cartao);
-  if (cartoesTopo.length && semCartaoTopo.length) bloco('Sem cartão', soma(semCartaoTopo));
   montaCartoes();
   $('cart-sub').textContent = 'Gastos de ' + rotulo(m) + ' em cada cartão, pela data da compra. Para ver outro mês, troque em Painel.';
   const cl2 = $('clist'); cl2.innerHTML = '';
