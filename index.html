@@ -117,6 +117,10 @@ a{color:var(--accent);font-weight:600}
 .mes .fat-l{margin:0 0 10px 22px}
 .resumo-mensal{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:2px}
 @media print{.mes .fat-l{display:block}}
+.pc{min-width:200px}
+.pl{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.pl span{color:var(--mute);font-size:.9rem}
+.pl b{font-size:1rem}
 </style>
 </head>
 <body>
@@ -598,7 +602,7 @@ $('fecart').onsubmit = e => { e.preventDefault(); if (!cartaoEd) return;
     catch (err) { if (err.message) erro(err.message); } })();
 };
 
-// Próximas faturas: quanto vence no próximo vencimento de cada cartão
+// Próximas faturas: os dois próximos vencimentos de cada cartão
 let proxSeq = 0;
 async function carregarProximas(){
   const alvo = $('resumo-prox'), seq = ++proxSeq;
@@ -606,27 +610,27 @@ async function carregarProximas(){
   const cs = D.cartoes || [];
   if (!cs.length || !token) return;
   const hojeS = hoje(), mesAtual = hojeS.slice(0, 7);
-  const venc = cs.map(c => {
-    const esteMes = mesAtual + '-' + pad(Math.min(c.vencimento, diasDoMes(mesAtual)));
-    const mesFat = esteMes >= hojeS ? mesAtual : somaMes(mesAtual, 1);
-    return { id: c.id, mesFat, data: mesFat + '-' + pad(Math.min(c.vencimento, diasDoMes(mesFat))) };
-  });
-  const meses = venc.map(v => v.mesFat).sort();
+  const dataVenc = (c, m) => m + '-' + pad(Math.min(c.vencimento, diasDoMes(m)));
+  const venc = cs.map(c => { const m1 = dataVenc(c, mesAtual) >= hojeS ? mesAtual : somaMes(mesAtual, 1); return { id: c.id, meses: [m1, somaMes(m1, 1)] }; });
+  const todos = venc.flatMap(v => v.meses).sort();
   const legenda = document.createElement('div'); legenda.className = 'sub'; legenda.style.width = '100%';
   legenda.textContent = 'Calculando as próximas faturas...'; alvo.appendChild(legenda);
   try {
-    const dados = await listarIntervalo(somaMes(meses[0], -3), meses[meses.length - 1]);
+    const dados = await listarIntervalo(somaMes(todos[0], -3), todos[todos.length - 1]);
     if (seq !== proxSeq) return;
     if (dados.cartoes) D.cartoes = dados.cartoes;
     const itens = dados.despesas || [];
-    legenda.textContent = 'Próximas faturas: o que você vai pagar em cada vencimento';
+    legenda.textContent = 'Próximas faturas: o que você vai pagar nos dois próximos vencimentos de cada cartão';
     cs.map(c => { const v = venc.find(v => v.id === c.id);
-        return { c, v, total: soma(itens.filter(x => x.cartao === c.id && faturaEfetiva(x) === v.mesFat)) }; })
-      .sort((a, b) => a.v.data.localeCompare(b.v.data))
-      .forEach(({ c, v, total }) => { const d = document.createElement('div');
-        d.innerHTML = '<span class="sub"></span><b></b>';
-        d.children[0].textContent = c.nome + ' · vence ' + dataBR(v.data).slice(0, 5) + (c.fechamento ? '' : ' (estimado)');
-        d.children[1].textContent = brl(total); alvo.appendChild(d); });
+        return { c, linhas: v.meses.map(m => ({ m, data: dataVenc(c, m), total: soma(itens.filter(x => x.cartao === c.id && faturaEfetiva(x) === m)) })) }; })
+      .sort((a, b) => a.linhas[0].data.localeCompare(b.linhas[0].data))
+      .forEach(({ c, linhas }) => { const d = document.createElement('div'); d.className = 'pc';
+        d.innerHTML = '<span class="sub"></span>' + '<div class="pl"><span></span><b></b></div>'.repeat(2);
+        d.children[0].textContent = c.nome + (c.fechamento ? '' : ' (estimado)');
+        linhas.forEach((l, i) => { const r = d.children[i + 1];
+          r.children[0].textContent = MESES[Number(l.m.slice(5, 7)) - 1] + ' · vence ' + dataBR(l.data).slice(0, 5);
+          r.children[1].textContent = brl(l.total); });
+        alvo.appendChild(d); });
   } catch (e) { if (seq === proxSeq) legenda.textContent = 'Não foi possível calcular as próximas faturas agora.'; }
 }
 
