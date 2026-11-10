@@ -569,9 +569,9 @@ $('fedit').onsubmit = e => { e.preventDefault(); if (!editando) return;
         if (corpo.data !== editando.data || (corpo.fatura || '') !== (editando.fatura || '')) await api('fin-api', corpo);
       } else await api('fin-api', corpo);
       fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar();
+      if (!$('vis-cartoes').hidden) await carregarFaturas();
       if (corpo.fatura) { const it = (D.despesas || []).find(x => x.id === corpo.id);
-        if (it && it.fatura !== corpo.fatura) aviso('O vencimento da fatura não ficou gravado. Confira se a coluna "fatura" existe na aba Despesas da planilha e se o workflow da API no n8n é a versão mais recente.'); }
-      if (!$('vis-cartoes').hidden) await carregarFaturas(); }
+        if (it && it.fatura !== corpo.fatura) aviso('O vencimento da fatura não ficou gravado. Confira se a coluna "fatura" existe na aba Despesas da planilha e se o workflow da API no n8n é a versão mais recente.'); } }
     catch (err) { if (err.message) erro(err.message); } finally { bt.disabled = false; } })();
 };
 
@@ -580,7 +580,8 @@ $('fcart').onsubmit = e => { e.preventDefault(); const f = new FormData($('fcart
   if (!Number.isInteger(venc) || venc < 1 || venc > 31) { aviso('Digite um dia de vencimento de 1 a 31.'); return; }
   if (!Number.isInteger(fech) || fech < 0 || fech > 31) { aviso('O dia de fechamento deve ser de 1 a 31.'); return; }
   seguro(async () => { await api('fin-api', { acao:'adicionar_cartao', nome: f.get('nome').trim(), vencimento: venc, fechamento: fech });
-    $('fcart').reset(); await carregar(); await carregarFaturas(); }); };
+    $('fcart').reset(); await carregar(); await carregarFaturas();
+    if (fech) { const cc = (D.cartoes || []).filter(c => c.nome === f.get('nome').trim()).pop(); if (cc && cc.fechamento !== fech) aviso('O dia de fechamento não ficou gravado. Confira se a coluna "fechamento" existe na aba Cartoes da planilha e se o workflow da API no n8n é a versão mais recente.'); } }); };
 
 let cartaoEd = null;
 function abrirCartao(c){
@@ -598,7 +599,8 @@ $('fecart').onsubmit = e => { e.preventDefault(); if (!cartaoEd) return;
   if (!Number.isInteger(venc) || venc < 1 || venc > 31) { erro('Digite um dia de vencimento de 1 a 31.'); return; }
   if (!Number.isInteger(fech) || fech < 0 || fech > 31) { erro('O dia de fechamento deve ser de 1 a 31.'); return; }
   (async () => { try { await api('fin-api', { acao:'editar_cartao', id: cartaoEd.id, nome: f.get('nome').trim(), vencimento: venc, fechamento: fech });
-      fechaCartao(); await carregar(); await carregarFaturas(); }
+      const idC = cartaoEd.id; fechaCartao(); await carregar(); await carregarFaturas();
+      if (fech) { const cc = cartaoPorId(idC); if (cc && cc.fechamento !== fech) aviso('O dia de fechamento não ficou gravado. Confira se a coluna "fechamento" existe na aba Cartoes da planilha e se o workflow da API no n8n é a versão mais recente.'); } }
     catch (err) { if (err.message) erro(err.message); } })();
 };
 
