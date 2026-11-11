@@ -565,7 +565,9 @@ $('fedit').onsubmit = e => { e.preventDefault(); if (!editando) return;
       const todas = editando.grupo && !$('edit-todas-l').hidden && $('edit-todas').checked;
       if (todas) {
         await api('fin-api', { acao:'editar_grupo', grupo: editando.grupo, descricao: corpo.descricao, valor: corpo.valor,
-          categoria: corpo.categoria, cartao: corpo.cartao });
+          categoria: corpo.categoria, cartao: corpo.cartao,
+          ajustarFatura: (corpo.fatura || '') !== (editando.fatura || '') && !!parseInt(editando.parcela, 10),
+          fatura: corpo.fatura || '', parcelaAtual: parseInt(editando.parcela, 10) || 0 });
         if (corpo.data !== editando.data || (corpo.fatura || '') !== (editando.fatura || '')) await api('fin-api', corpo);
       } else await api('fin-api', corpo);
       fechaEdicao(); $('mes').value = corpo.data.slice(0, 7); await carregar();
